@@ -127,11 +127,85 @@ function craftIsLearned(craft) {
   return !craft.isNeedsUnlock || unlockedCraftIds.includes(craft.id);
 }
 
+const WGO_ALIASES = {
+  "well_garden_upgrade": ["well_garden_2", "well_garden_1"],
+  "well_garden_upgrade_s": ["well_garden_2", "well_garden_1"],
+  "zombie_supplier_station": ["zombie_supplier_station_mini"],
+  "zombie_supplier_station_p": ["zombie_supplier_station_mini"],
+  "chest_rough": ["wood_container"],
+  "chest_rough_place_p": ["wood_container"],
+  "unlock_graveyard_zone_1": ["graveyard_module_grave_1"],
+  "unlock_graveyard_zone_1_s": ["graveyard_module_grave_1"],
+  "kitchen_table_up_s": ["kitchen_table"],
+  "kitchen_table_up": ["kitchen_table"],
+};
+
+const WILD_WORLD_FLORA = new Set([
+  "tree_apple_clr1_xxs", "bush_ashberry_clr1_xxs", "bush_rhodod_clr1_xxs", "bush_blueberry_clr1_xxs"
+]);
+
+function normalizeWgoId(s) {
+  if (!s) return "";
+  return s.toLowerCase()
+    .replace(/_[spr]$/i, "")
+    .replace(/_place$/i, "")
+    .replace(/_up$/i, "");
+}
+
+function isBlockageCraft(craft) {
+  if (!craft || !craft.id) return false;
+  const cid = craft.id.toLowerCase();
+  return cid.includes("blockage") || cid.includes("repair") || cid.includes("ladder_broken");
+}
+
 function craftIsCompleted(craft) {
-  if (!craft || !craftHasContent(craft) || !craft.isOneTime) return false;
-  if (oneTimeCompletedCraftIds.includes(craft.id)) return true;
-  if (builtWgoIds.includes(craft.id)) return true;
-  if (craft.outputItems && craft.outputItems.some(o => o.itemId && builtWgoIds.includes(o.itemId))) return true;
+  if (!craft || !craftHasContent(craft)) return false;
+
+  const cid = craft.id;
+  const cidLower = cid.toLowerCase();
+  const normCid = normalizeWgoId(cid);
+  const outs = (craft.outputItems || []).map(o => o.itemId).filter(Boolean);
+  const normOuts = outs.map(normalizeWgoId);
+
+  // Wild flora exclusion
+  if (WILD_WORLD_FLORA.has(cid) || outs.some(o => WILD_WORLD_FLORA.has(o))) {
+    return false;
+  }
+
+  // 1. One-time completed craft IDs registered by game engine
+  if (oneTimeCompletedCraftIds.includes(cid)) return true;
+
+  // 2. Blockage crafts: Standing blockage WGOs mean uncleared
+  if (isBlockageCraft(craft)) {
+    return false;
+  }
+
+  // 3. One-time building / station / upgrade crafts
+  if (craft.isOneTime) {
+    const builtSet = new Set(builtWgoIds.map(w => w.toLowerCase()));
+    const normBuiltSet = new Set(builtWgoIds.map(normalizeWgoId));
+
+    // Check alias mapping
+    const aliases = (WGO_ALIASES[cid] || []).concat(WGO_ALIASES[normCid] || []);
+    for (const o of outs) {
+      if (WGO_ALIASES[o]) aliases.push(...WGO_ALIASES[o]);
+      if (WGO_ALIASES[normalizeWgoId(o)]) aliases.push(...WGO_ALIASES[normalizeWgoId(o)]);
+    }
+
+    for (const a of aliases) {
+      const aLower = a.toLowerCase();
+      if (builtSet.has(aLower) || normBuiltSet.has(normalizeWgoId(a))) {
+        return true;
+      }
+    }
+
+    // Check exact & normalized matches
+    if (builtSet.has(cidLower) || normBuiltSet.has(normCid)) return true;
+    for (let i = 0; i < outs.length; i++) {
+      if (builtSet.has(outs[i].toLowerCase()) || normBuiltSet.has(normOuts[i])) return true;
+    }
+  }
+
   return false;
 }
 
