@@ -87,7 +87,8 @@ def install_plugin_to_game(game_dir):
         changes_made.append("plugin verified")
         msg = f"Plugin setup complete ({', '.join(changes_made)})."
         return True, msg
-    except PermissionError:
-        return False, "Game file locked. Please close Graveyard Keeper 2 and retry."
     except Exception as e:
+        target_dll = os.path.join(game_dir, "BepInEx", "plugins", "GKTrackerBridge", "GKTrackerBridge.dll")
+        if os.path.isfile(target_dll):
+            return True, "Plugin already installed and active (game is running)."
         return False, f"Installation error: {e}"

@@ -29,7 +29,47 @@ function prettify(id) {
     .join(" ");
 }
 
+const NAME_OVERRIDES = {
+  "garden_farming_base_1": "Garden Upgrade (1)",
+  "garden_farming_base_2": "Garden Upgrade (2)",
+  "garden_farming_base_1_s": "Garden Upgrade (1)",
+  "garden_farming_base_2_s": "Garden Upgrade (2)",
+  "well_garden_upgrade": "Garden Well Upgrade",
+  "well_garden_upgrade_s": "Garden Well Upgrade",
+  "kitchen_table_repair": "Kitchen Table Repair",
+  "kitchen_oven_repair": "Kitchen Stove Repair",
+  "kitchen_table_up": "Kitchen Table Upgrade",
+  "kitchen_table_up_s": "Kitchen Table Upgrade",
+  "kitchen_oven_up": "Kitchen Stove Upgrade",
+  "kitchen_oven_up_s": "Kitchen Stove Upgrade",
+  "unlock_graveyard_zone_1": "Unlock Graveyard Zone 1",
+  "unlock_graveyard_zone_1_s": "Unlock Graveyard Zone 1",
+  "unlock_graveyard_zone_2": "Unlock Graveyard Zone 2",
+  "unlock_graveyard_zone_2_s": "Unlock Graveyard Zone 2",
+  "unlock_graveyard_zone_3": "Unlock Graveyard Zone 3",
+  "unlock_graveyard_zone_3_s": "Unlock Graveyard Zone 3",
+  "zombie_supplier_station_house": "Zombie Supplier Station",
+  "garden_compost_pile": "Garden Compost Pile",
+  "garden_compost_pile_s": "Garden Compost Pile",
+  "garden_compost_pile_upgrade": "Garden Compost Pile Upgrade",
+  "garden_compost_pile_upgrade_s": "Garden Compost Pile Upgrade",
+  "home_upgrade": "Home Upgrade",
+  "home_attic": "Home Attic",
+  "upgrade_church_1": "Church Upgrade I",
+  "upgrade_church_1_s": "Church Upgrade I",
+  "upgrade_church_2": "Church Upgrade II",
+  "upgrade_church_2_s": "Church Upgrade II",
+  "upgrade_church_3": "Church Upgrade III",
+  "upgrade_church_3_s": "Church Upgrade III",
+  "upgrade_graveyard_fence_1": "Graveyard Fence Upgrade I",
+  "upgrade_graveyard_fence_2": "Graveyard Fence Upgrade II",
+  "vineyard_upgrade": "Vineyard Upgrade",
+  "conveyor_storage_upgrade": "Conveyor Storage Upgrade",
+  "bed_upgrade": "Bed Upgrade",
+};
+
 function displayNameFor(itemId) {
+  if (NAME_OVERRIDES[itemId]) return NAME_OVERRIDES[itemId];
   const item = itemsById[itemId];
   if (item && item.displayName) return item.displayName;
   return prettify(itemId);
@@ -138,10 +178,15 @@ const WGO_ALIASES = {
   "unlock_graveyard_zone_1_s": ["graveyard_module_grave_1"],
   "kitchen_table_up_s": ["kitchen_table"],
   "kitchen_table_up": ["kitchen_table"],
+  "kitchen_table_repair": ["kitchen_table"],
+  "kitchen_oven_up_s": ["kitchen_oven"],
+  "kitchen_oven_up": ["kitchen_oven"],
+  "kitchen_oven_repair": ["kitchen_oven"],
 };
 
-const WILD_WORLD_FLORA = new Set([
-  "tree_apple_clr1_xxs", "bush_ashberry_clr1_xxs", "bush_rhodod_clr1_xxs", "bush_blueberry_clr1_xxs"
+const SCENE_STATIC_MARKERS = new Set([
+  "tree_apple_clr1_xxs", "bush_ashberry_clr1_xxs", "bush_rhodod_clr1_xxs", "bush_blueberry_clr1_xxs",
+  "garden_extension_trees_bushes", "garden_extension_trees_bushes_p"
 ]);
 
 function normalizeWgoId(s) {
@@ -155,7 +200,8 @@ function normalizeWgoId(s) {
 function isBlockageCraft(craft) {
   if (!craft || !craft.id) return false;
   const cid = craft.id.toLowerCase();
-  return cid.includes("blockage") || cid.includes("repair") || cid.includes("ladder_broken");
+  if (cid.includes("kitchen_table_repair") || cid.includes("kitchen_oven_repair")) return false;
+  return cid.includes("blockage") || cid.includes("ladder_broken");
 }
 
 function craftIsCompleted(craft) {
@@ -167,8 +213,8 @@ function craftIsCompleted(craft) {
   const outs = (craft.outputItems || []).map(o => o.itemId).filter(Boolean);
   const normOuts = outs.map(normalizeWgoId);
 
-  // Wild flora exclusion
-  if (WILD_WORLD_FLORA.has(cid) || outs.some(o => WILD_WORLD_FLORA.has(o))) {
+  // Exclude scene static markers & wild flora
+  if (SCENE_STATIC_MARKERS.has(cid) || outs.some(o => SCENE_STATIC_MARKERS.has(o))) {
     return false;
   }
 
@@ -180,7 +226,12 @@ function craftIsCompleted(craft) {
     return false;
   }
 
-  // 3. One-time building / station / upgrade crafts
+  // 3. Any craft that requires technology unlock MUST be unlocked in player's knowledge system!
+  if (craft.isNeedsUnlock && !craftIsLearned(craft)) {
+    return false;
+  }
+
+  // 4. One-time building / station / upgrade crafts
   if (craft.isOneTime) {
     const builtSet = new Set(builtWgoIds.map(w => w.toLowerCase()));
     const normBuiltSet = new Set(builtWgoIds.map(normalizeWgoId));
@@ -214,6 +265,7 @@ function craftIsTestJunk(craft) {
 }
 
 function craftDisplayName(craft) {
+  if (NAME_OVERRIDES[craft.id]) return NAME_OVERRIDES[craft.id];
   return craft.outputItems.length > 0
     ? craft.outputItems.map(o => displayNameFor(o.itemId)).join(", ")
     : prettify(craft.id);
@@ -621,6 +673,10 @@ function craftSearchableText(craft, includeMaterials = true) {
     prettify(craft.id),
     craftDisplayName(craft)
   ];
+  for (const cin of craft.craftsIn || []) {
+    parts.push(cin);
+    parts.push(prettify(cin));
+  }
   for (const o of craft.outputItems || []) {
     if (o.itemId) {
       parts.push(o.itemId);
@@ -636,6 +692,31 @@ function craftSearchableText(craft, includeMaterials = true) {
     }
   }
   return parts.join(" ").toLowerCase();
+}
+
+function scoreSearchMatch(craft, queryRaw, terms) {
+  const title = craftDisplayName(craft).toLowerCase();
+  const cid = craft.id.toLowerCase();
+  let score = 0;
+
+  if (title === queryRaw) score += 1000;
+  else if (title.startsWith(queryRaw)) score += 500;
+  else if (terms.every(t => title.includes(t))) score += 250;
+  else if (terms.some(t => title.includes(t))) score += 100;
+
+  if (terms.every(t => cid.includes(t))) score += 50;
+
+  for (const o of craft.outputItems || []) {
+    if (o.itemId && displayNameFor(o.itemId).toLowerCase().includes(queryRaw)) {
+      score += 80;
+    }
+  }
+
+  for (const cin of craft.craftsIn || []) {
+    if (cin.toLowerCase().includes(queryRaw)) score += 30;
+  }
+
+  return score;
 }
 
 function renderSearch() {
@@ -656,20 +737,25 @@ function renderSearch() {
 
   const terms = queryRaw.split(/\s+/).filter(Boolean);
 
-  let matches = recipesData.crafts.filter(craft => {
-    if (!craftHasContent(craft)) return false;
-    if (!showTest && craftIsTestJunk(craft)) return false;
-    if (hideCompleted && craftIsCompleted(craft)) return false;
+  let scoredMatches = [];
+  for (const craft of recipesData.crafts) {
+    if (!craftHasContent(craft)) continue;
+    if (!showTest && craftIsTestJunk(craft)) continue;
+    if (hideCompleted && craftIsCompleted(craft)) continue;
 
     if (terms.length > 0) {
       const text = craftSearchableText(craft, includeMaterials);
-      if (!terms.every(t => text.includes(t))) return false;
+      if (!terms.every(t => text.includes(t))) continue;
     }
-    return true;
-  });
 
-  if (onlyCraftable) matches = matches.filter(c => craftIsCraftable(c, 1));
-  matches = matches.slice(0, 60);
+    if (onlyCraftable && !craftIsCraftable(craft, 1)) continue;
+
+    const score = scoreSearchMatch(craft, queryRaw, terms);
+    scoredMatches.push({ craft, score });
+  }
+
+  scoredMatches.sort((a, b) => b.score - a.score);
+  const matches = scoredMatches.slice(0, 150).map(m => m.craft);
 
   if (matches.length === 0) {
     list.innerHTML = '<p class="empty-hint">No matching recipes.</p>';
@@ -1007,7 +1093,7 @@ function setupConfigBanner() {
 let lastInventoryFingerprint = null;
 
 function getInventoryFingerprint() {
-  return JSON.stringify(totals) + "|" + oneTimeCompletedCraftIds.join(",") + "|" + builtWgoIds.join(",");
+  return JSON.stringify(totals) + "|" + unlockedCraftIds.join(",") + "|" + oneTimeCompletedCraftIds.join(",") + "|" + builtWgoIds.join(",");
 }
 
 async function pollLoop() {
