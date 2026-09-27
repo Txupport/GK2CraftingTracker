@@ -28,56 +28,61 @@ def install_plugin_to_game(game_dir):
     gk2_exe = os.path.join(game_dir, "GraveyardKeeper2.exe")
     gk2_data = os.path.join(game_dir, "GraveyardKeeper2_Data")
     if not os.path.isfile(gk2_exe) and not os.path.isdir(gk2_data):
-        return False, f"Directory does not appear to contain Graveyard Keeper 2."
+        return False, "Directory does not appear to contain Graveyard Keeper 2."
 
     payload_dir = get_payload_dir()
     bepinex_payload = os.path.join(payload_dir, "bepinex")
     plugin_payload = os.path.join(payload_dir, "plugin")
 
     if not os.path.isdir(payload_dir):
-        return False, f"Installer payload folder missing."
+        return False, "Installer payload folder missing."
 
     changes_made = []
 
-    # 1. Install BepInEx core if version.dll / winhttp.dll is not present
-    has_version_dll = os.path.isfile(os.path.join(game_dir, "version.dll"))
-    has_winhttp_dll = os.path.isfile(os.path.join(game_dir, "winhttp.dll"))
-    has_bepinex_dir = os.path.isdir(os.path.join(game_dir, "BepInEx", "core"))
+    try:
+        # 1. Install BepInEx core if version.dll / winhttp.dll is not present
+        has_version_dll = os.path.isfile(os.path.join(game_dir, "version.dll"))
+        has_winhttp_dll = os.path.isfile(os.path.join(game_dir, "winhttp.dll"))
+        has_bepinex_dir = os.path.isdir(os.path.join(game_dir, "BepInEx", "core"))
 
-    if not (has_version_dll or has_winhttp_dll) or not has_bepinex_dir:
-        # Copy BepInEx payload
-        for item in os.listdir(bepinex_payload):
-            src = os.path.join(bepinex_payload, item)
-            dst = os.path.join(game_dir, item)
-            if os.path.isdir(src):
-                if os.path.exists(dst):
-                    shutil.copytree(src, dst, dirs_exist_ok=True)
+        if not (has_version_dll or has_winhttp_dll) or not has_bepinex_dir:
+            # Copy BepInEx payload
+            for item in os.listdir(bepinex_payload):
+                src = os.path.join(bepinex_payload, item)
+                dst = os.path.join(game_dir, item)
+                if os.path.isdir(src):
+                    if os.path.exists(dst):
+                        shutil.copytree(src, dst, dirs_exist_ok=True)
+                    else:
+                        shutil.copytree(src, dst)
                 else:
-                    shutil.copytree(src, dst)
-            else:
+                    shutil.copy2(src, dst)
+            changes_made.append("BepInEx core installed")
+
+        # If winhttp.dll was dropped or existed, ensure it's version.dll
+        winhttp_path = os.path.join(game_dir, "winhttp.dll")
+        version_path = os.path.join(game_dir, "version.dll")
+        if os.path.isfile(winhttp_path) and not os.path.isfile(version_path):
+            try:
+                os.rename(winhttp_path, version_path)
+                changes_made.append("renamed winhttp.dll to version.dll")
+            except OSError:
+                pass
+
+        # 2. Install / update GKTrackerBridge plugin
+        target_plugin_dir = os.path.join(game_dir, "BepInEx", "plugins", "GKTrackerBridge")
+        os.makedirs(target_plugin_dir, exist_ok=True)
+
+        for item in os.listdir(plugin_payload):
+            src = os.path.join(plugin_payload, item)
+            dst = os.path.join(target_plugin_dir, item)
+            if os.path.isfile(src):
                 shutil.copy2(src, dst)
-        changes_made.append("BepInEx core installed")
 
-    # If winhttp.dll was dropped or existed, ensure it's version.dll
-    winhttp_path = os.path.join(game_dir, "winhttp.dll")
-    version_path = os.path.join(game_dir, "version.dll")
-    if os.path.isfile(winhttp_path) and not os.path.isfile(version_path):
-        try:
-            os.rename(winhttp_path, version_path)
-            changes_made.append("renamed winhttp.dll to version.dll")
-        except OSError:
-            pass
-
-    # 2. Install / update GKTrackerBridge plugin
-    target_plugin_dir = os.path.join(game_dir, "BepInEx", "plugins", "GKTrackerBridge")
-    os.makedirs(target_plugin_dir, exist_ok=True)
-
-    for item in os.listdir(plugin_payload):
-        src = os.path.join(plugin_payload, item)
-        dst = os.path.join(target_plugin_dir, item)
-        if os.path.isfile(src):
-            shutil.copy2(src, dst)
-
-    changes_made.append("plugin updated")
-    msg = f"Plugin setup complete ({', '.join(changes_made)})."
-    return True, msg
+        changes_made.append("plugin updated")
+        msg = f"Plugin setup complete ({', '.join(changes_made)})."
+        return True, msg
+    except PermissionError:
+        return False, "Game file locked. Please close Graveyard Keeper 2 and retry."
+    except Exception as e:
+        return False, f"Installation error: {e}"
