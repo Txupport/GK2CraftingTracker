@@ -1,103 +1,65 @@
 # GK2 Crafting Tracker
 
-A live inventory + crafting tracker for **Graveyard Keeper 2**. It reads your
-actual inventory and every chest you've visited straight out of the game's
-own memory (via a small BepInEx mod) — no OCR, no manual entry, no wiki
-lookups for recipes. Pin the recipes you're working toward and watch a
-readiness checklist update live as you play, on your PC or on your phone.
+A live inventory + crafting tracker for **Graveyard Keeper 2**. It reads your actual inventory and every chest you've visited straight out of the game's own memory (via a small BepInEx mod) — no OCR, no manual entry, no wiki lookups for recipes. Pin the recipes you're working toward and watch a readiness checklist update live as you play, on your PC or on your phone/tablet.
 
-## How it works
+## Source Code & Project Structure
 
-- **`Plugin/`** — a BepInEx C# plugin (`GKTrackerBridge`) that hooks into
-  the game's own data. It dumps the full recipe/item database once on load
-  (straight from the game's balance data, so it's always accurate to your
-  exact game version) and writes a live snapshot of your inventory + every
-  loaded chest once a second.
-- **`Server/`** — a small local web app that reads those files and serves a
-  UI for browsing recipes, pinning the ones you want, and seeing what you
-  still need. It's LAN-accessible, so you can pin/check from your phone or
-  tablet while your PC runs the game.
+The entire project is open source and organized as follows:
 
-## Setup
+- **`Plugin/`** — BepInEx C# plugin (`GKTrackerBridge`):
+  - `TrackerPlugin.cs`: Core BepInEx plugin entry point and Harmony patches.
+  - `RecipeDumper.cs`: Dumps the full recipe/item database on load, resolving display names via game localization tables (`LLBase.L`).
+  - `InventoryWatcher.cs`: Periodically dumps player inventory, toolbelt, loaded world containers (with named areas like "Home", "Yard", "Mine"), and unlocked crafts.
+- **`Server/`** — Python/Flask local web app & launcher:
+  - `launcher.py`: Tkinter GUI launcher with QR code, local IP display, tray minimization, and game process auto-shutdown monitoring.
+  - `app.py`: Flask API server (`/api/status`, `/api/recipes`, `/api/inventory`, `/api/pinned`, `/api/bundles`).
+  - `gk2_locate.py`: Dynamic Steam installation path locator (searches Windows Registry & `libraryfolders.vdf`).
+  - `static/`: Frontend web UI (`index.html`, `app.js`, `style.css`, and item icon assets).
 
-### 1. Install BepInEx (one-time, if you don't already have it)
+---
+
+## Setup & Running
+
+### Option 1: Run Pre-Built Executable (Standalone)
+
+1. Download `GK2CraftingTracker.exe` from the latest GitHub Release.
+2. Double-click `GK2CraftingTracker.exe` and press **Start**.
+3. Scan the QR code with your phone/tablet or open `http://localhost:5151` on your PC.
+
+### Option 2: Run Directly from Source (Python)
+
+If you prefer to inspect or run the code directly without executing a pre-compiled `.exe`:
+
+```bash
+cd Server
+setup.bat   # Installs dependencies (Flask, Pillow, qrcode, pystray)
+run.bat     # Launches the server and GUI launcher directly via Python
+```
+
+---
+
+### Installing the BepInEx Plugin (One-Time)
 
 Graveyard Keeper 2 is a Unity/Mono game, so BepInEx 5.x works out of the box.
 
-1. Download **BepInEx_win_x64_5.4.23.x** from the
-   [BepInEx releases page](https://github.com/BepInEx/BepInEx/releases).
-2. Extract it into your GK2 install folder (where `GraveyardKeeper2.exe` is).
-3. **Rename `winhttp.dll` to `version.dll`** in that same folder. This step
-   matters: Windows treats `winhttp.dll` as a "Known DLL" and will silently
-   load the real system one instead of BepInEx's, which stops it from
-   working. `version.dll` isn't on that list and GK2 doesn't otherwise use it.
-4. Launch the game once and close it — this generates BepInEx's folder
-   structure (`BepInEx/plugins`, `BepInEx/config`, etc.).
+1. Download **BepInEx_win_x64_5.4.23.x** from the [BepInEx releases page](https://github.com/BepInEx/BepInEx/releases).
+2. Extract it into your GK2 install folder (where `GraveyardKeeper2.exe` lives).
+3. **Rename `winhttp.dll` to `version.dll`** in that folder (Windows treats `winhttp.dll` as a system DLL and will bypass BepInEx unless renamed).
+4. Launch the game once and close it to generate BepInEx folder structures.
+5. Drop `GKTrackerBridge.dll` and `Newtonsoft.Json.dll` from the `Plugin/` build into `BepInEx/plugins/`.
 
-### 2. Install the plugin
+---
 
-Build `Plugin/Plugin.csproj` (or grab a release build) and drop
-`GKTrackerBridge.dll` + `Newtonsoft.Json.dll` into `BepInEx/plugins/`.
+## Features
 
-> The `.csproj` points at `D:\Games\steamapps\common\Graveyard Keeper 2` by
-> default — edit the `<GameDir>` property in `Plugin.csproj` to match your
-> own install path before building.
+- **Live Inventory & Chest Tracking**: Tracks items across your inventory and every visited container in your save.
+- **Named Container Areas**: Groups chest items by location ("Home", "Yard", "Mine", etc.).
+- **Recipe Pinning & Bundles**: Pin recipes and group them into bundles with a **Total Items Needed** checklist.
+- **Crafting Tree Visibility**: Expand any recipe to view required sub-ingredients and multi-tier crafting requirements.
+- **Auto-Minimize to Tray**: Launcher window stays visible until a client connects, then minimizes cleanly to the system tray.
 
-### 3. Run the tracker server
-
-**Option A — standalone exe (no Python needed):**
-Grab `GK2CraftingTracker.exe` from a release and double-click it.
-
-**Option B — from source:**
-```bash
-cd Server
-setup.bat   # installs dependencies, one-time
-run.bat     # starts the server
-```
-
-Either way, the console will print two links:
-```
-This PC:      http://localhost:5151
-Phone/tablet: http://192.168.x.x:5151
-```
-Open either in a browser. The phone/tablet link works from any other device
-on the same Wi-Fi/network.
-
-The server auto-detects your GK2 install via Steam's library folders. If it
-can't find it, the page will show a box to type the install path in manually.
-
-### Optional: auto-launch it when you start the game
-
-`Server/launch_with_game.bat` starts the tracker (if it's not already
-running) and then launches the game itself. Point Steam at it instead of
-the game directly: right-click **Graveyard Keeper 2 → Properties → General
-→ Launch Options** and set it to:
-```
-"C:\full\path\to\launch_with_game.bat" %command%
-```
-This only works with the standalone exe (Option A above) sitting next to
-the `.bat` file, since it needs to find `GK2CraftingTracker.exe` by name.
-
-## Using it
-
-- **Browse Recipes** — search by item or recipe name, pin the ones you're
-  working toward.
-- **Pinned Recipes** — see live have/need counts for every ingredient,
-  across your inventory *and* every chest in your world (loaded the moment
-  you load your save, no need to walk around first), with a Ready / Missing
-  items badge. Bump the quantity if you want to craft more than one.
-
-## Known limitations
-
-- **Item/recipe names are the game's internal ids, prettified** (e.g.
-  `wooden_plank` → "Wooden Plank"), not the fully localized display names —
-  GK2's real display names live in Unity's Addressables string tables,
-  which aren't as straightforward to resolve. They're readable enough for
-  almost everything, but a few may look a little raw.
+---
 
 ## Contributing
 
-Issues and PRs welcome — this was built by reverse-engineering the game's
-own Mono assembly with a plain .NET reflection dump (no decompiler needed,
-since it's not IL2CPP), so if something breaks after a GK2 update it's
-usually just a renamed field away from a fix.
+Issues and PRs are welcome! Feel free to explore the source code in `Plugin/` and `Server/`.
