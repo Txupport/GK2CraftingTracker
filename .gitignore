@@ -1,0 +1,24 @@
+# Plugin build output
+Plugin/bin/
+Plugin/obj/
+Plugin/.vs/
+
+# Python & PyInstaller output
+__pycache__/
+*.pyc
+*.pyo
+Server/build/
+Server/dist/
+Server/__pycache__/
+Server/*.log
+Server/pinned.json
+Server/bundles.json
+Server/config.json
+
+# Transcripts & Logs
+*.log
+Transcript for Antigravity.txt
+
+# OS metadata
+.DS_Store
+Thumbs.db

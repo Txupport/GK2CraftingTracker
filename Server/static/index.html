@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GK2 - Recipe Tracker by Txupport</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>GK2 - Recipe Tracker by Txupport</h1>
+    <div id="status" class="status status--unknown">Checking connection&hellip;</div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="pinned">Pinned Recipes</button>
+    <button class="tab-btn" data-tab="search">Search</button>
+    <button class="tab-btn" data-tab="browse">Browse Recipes</button>
+  </nav>
+
+  <main>
+    <section id="tab-pinned" class="tab-panel active">
+      <div class="filters-row">
+        <input id="new-bundle-name" type="text" placeholder="Bundle name, e.g. Church">
+        <button id="new-bundle-confirm" class="primary">Create</button>
+        <button id="new-bundle-cancel">Clear</button>
+        <label class="switch-label"><input type="checkbox" id="pinned-show-tree"> Show all crafting trees</label>
+        <label class="switch-label"><input type="checkbox" id="pinned-show-where"> Show item locations</label>
+        <button id="clear-all-pinned" class="danger">Clear All Pinned Recipes</button>
+      </div>
+      <div id="pinned-list">
+        <p class="empty-hint">No recipes pinned yet. Go to Search or Browse Recipes to add some.</p>
+      </div>
+    </section>
+
+    <section id="tab-search" class="tab-panel">
+      <input id="search" type="text" placeholder="Search by item or recipe name&hellip;" autocomplete="off">
+      <div class="filters-row">
+        <label><input type="checkbox" id="search-only-craftable"> Only show craftable</label>
+        <label><input type="checkbox" id="search-include-materials" checked> Include material names in search</label>
+        <label><input type="checkbox" id="search-show-test"> Show test/debug recipes</label>
+        <label class="switch-label"><input type="checkbox" id="search-show-tree"> Show crafting tree</label>
+        <label class="switch-label"><input type="checkbox" id="search-show-where"> Show item locations</label>
+      </div>
+      <div id="search-list" class="card-list"></div>
+    </section>
+
+    <section id="tab-browse" class="tab-panel">
+      <div class="filters-row">
+        <label><input type="checkbox" id="browse-only-craftable"> Only show craftable</label>
+        <label><input type="checkbox" id="browse-show-not-learned"> Show not learned yet</label>
+        <label><input type="checkbox" id="browse-show-test"> Show test/debug recipes</label>
+        <label class="switch-label"><input type="checkbox" id="browse-show-tree"> Show crafting tree</label>
+        <label class="switch-label"><input type="checkbox" id="browse-show-where"> Show item locations</label>
+      </div>
+      <nav class="subtabs">
+        <button class="subtab-btn active" data-subtab="area">By Area / Device</button>
+        <button class="subtab-btn" data-subtab="material">By Material</button>
+      </nav>
+      <div id="browse-sections-area" class="subtab-panel active"></div>
+      <div id="browse-sections-material" class="subtab-panel"></div>
+    </section>
+  </main>
+
+  <div id="bundle-modal-overlay" class="modal-overlay" hidden>
+    <div class="modal">
+      <h3>Add to bundles</h3>
+      <div id="bundle-modal-options" class="modal-options"></div>
+      <div class="modal-actions">
+        <button id="bundle-modal-cancel">Cancel</button>
+        <button id="bundle-modal-apply" class="primary">Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="config-banner" class="config-banner" hidden>
+    <p>Couldn't find your Graveyard Keeper 2 install automatically.</p>
+    <input id="config-path" type="text" placeholder="C:\Path\To\Graveyard Keeper 2">
+    <button id="config-save">Save</button>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
