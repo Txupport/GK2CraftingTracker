@@ -15,9 +15,14 @@ let lastPinnedFingerprint = null;
 const MAX_TREE_DEPTH = 6;
 
 function prettify(id) {
-  return id
+  if (!id) return "";
+  let clean = id
+    .replace(/_[spr]$/i, "")
+    .replace(/_place$/i, "")
+    .replace(/_clr\d+(_xxs)?$/i, "")
     .replace(/[:/_]+/g, " ")
-    .trim()
+    .trim();
+  return clean
     .split(" ")
     .filter(Boolean)
     .map(w => w[0].toUpperCase() + w.slice(1))
@@ -124,7 +129,10 @@ function craftIsLearned(craft) {
 
 function craftIsCompleted(craft) {
   if (!craft || !craftHasContent(craft) || !craft.isOneTime) return false;
-  return oneTimeCompletedCraftIds.includes(craft.id);
+  if (oneTimeCompletedCraftIds.includes(craft.id)) return true;
+  if (builtWgoIds.includes(craft.id)) return true;
+  if (craft.outputItems && craft.outputItems.some(o => o.itemId && builtWgoIds.includes(o.itemId))) return true;
+  return false;
 }
 
 function craftIsTestJunk(craft) {
@@ -922,26 +930,38 @@ function setupConfigBanner() {
   });
 }
 
+let lastInventoryFingerprint = null;
+
+function getInventoryFingerprint() {
+  return JSON.stringify(totals) + "|" + oneTimeCompletedCraftIds.join(",") + "|" + builtWgoIds.join(",");
+}
+
 async function pollLoop() {
   try {
     await refreshStatus();
     await loadInventory();
+    const invFp = getInventoryFingerprint();
+    const invChanged = invFp !== lastInventoryFingerprint;
+    lastInventoryFingerprint = invFp;
+
     const active = document.activeElement;
     const isTyping = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable);
     if (!isTyping) {
       const tab = currentTab();
       if (tab === "pinned") {
         const currentFp = getPinnedStateFingerprint();
-        if (currentFp !== lastPinnedFingerprint) {
+        if (currentFp !== lastPinnedFingerprint || invChanged) {
           renderPinned();
         }
+      } else if (invChanged) {
+        renderActiveTab();
       }
     }
     updateCompletedTabBadge();
   } catch (e) {
     console.error(e);
   }
-  setTimeout(pollLoop, 2000);
+  setTimeout(pollLoop, 1500);
 }
 
 async function loadBundles() {

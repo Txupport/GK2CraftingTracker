@@ -69,7 +69,10 @@ namespace GKTrackerBridge
                 {
                     var wgo = kv.Value;
                     if (wgo == null || string.IsNullOrEmpty(wgo.id)) continue;
-                    builtSet.Add(wgo.id);
+                    if (!wgo.IsHidden)
+                    {
+                        builtSet.Add(wgo.id);
+                    }
 
                     if (wgo.Inventory == null) continue;
                     if (wgo.Inventory.Data == null || wgo.Inventory.Data.Inventory == null || wgo.Inventory.Data.Inventory.Count == 0) continue;
