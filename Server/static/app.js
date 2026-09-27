@@ -10,12 +10,20 @@ let builtWgoIds = [];
 let pinned = {};
 let bundles = [];
 let expandedTrees = new Set(); // craft ids whose crafting tree is expanded on the Pinned tab
+let expandedTotalsTrees = new Set(); // bundle/totals keys whose crafting trees are expanded
 let lastPinnedFingerprint = null;
 
 const MAX_TREE_DEPTH = 6;
 
+const PRETTIFIED_GROUPS = {
+  "church_blockage": "Church Blockages",
+  "base_blockage": "Base Blockages",
+  "basement_blockage": "Basement Blockages",
+};
+
 function prettify(id) {
   if (!id) return "";
+  if (PRETTIFIED_GROUPS[id]) return PRETTIFIED_GROUPS[id];
   let clean = id
     .replace(/_[spr]$/i, "")
     .replace(/_place$/i, "")
@@ -66,6 +74,15 @@ const NAME_OVERRIDES = {
   "vineyard_upgrade": "Vineyard Upgrade",
   "conveyor_storage_upgrade": "Conveyor Storage Upgrade",
   "bed_upgrade": "Bed Upgrade",
+  "church_blockage_1": "Church Blockage 1",
+  "church_blockage_2": "Church Blockage 2",
+  "church_blockage_3": "Church Blockage 3",
+  "church_blockage_4": "Church Blockage 4",
+  "church_blockage_5": "Church Blockage 5",
+  "church_blockage_6": "Church Blockage 6",
+  "church_blockage_7": "Church Blockage 7",
+  "church_blockage_8": "Church Blockage 8",
+  "church_blockage_9": "Church Blockage 9",
 };
 
 function displayNameFor(itemId) {
@@ -220,8 +237,26 @@ function craftIsCompleted(craft) {
   // 1. One-time completed craft IDs registered by game engine
   if (oneTimeCompletedCraftIds.includes(cid)) return true;
 
+  const builtSet = new Set(builtWgoIds.map(w => w.toLowerCase()));
+  const normBuiltSet = new Set(builtWgoIds.map(normalizeWgoId));
+
   // 2. Blockage crafts: Standing blockage WGOs mean uncleared
   if (isBlockageCraft(craft)) {
+    // If any obstacle WGO in craftsIn is still present in the world, it is UNCLEARED
+    if (craft.craftsIn && craft.craftsIn.some(w => builtSet.has(w.toLowerCase()))) {
+      return false;
+    }
+
+    // For church blockages: completed if church has been unlocked/entered and obstacle is cleared
+    if (cidLower.startsWith("church_blockage_")) {
+      return builtSet.has("builder_church") || builtSet.has("church_t0");
+    }
+
+    // For chained blockages: base_blockage_2 requires base_blockage_1 to be cleared first
+    if (cidLower === "base_blockage_2" && builtSet.has("base_blockage_1")) {
+      return false;
+    }
+
     return false;
   }
 
@@ -232,8 +267,6 @@ function craftIsCompleted(craft) {
 
   // 4. One-time building / station / upgrade crafts
   if (craft.isOneTime) {
-    const builtSet = new Set(builtWgoIds.map(w => w.toLowerCase()));
-    const normBuiltSet = new Set(builtWgoIds.map(normalizeWgoId));
 
     // Check alias mapping
     const aliases = (WGO_ALIASES[cid] || []).concat(WGO_ALIASES[normCid] || []);
@@ -531,7 +564,7 @@ function openBundleModal(craftId) {
   document.getElementById("bundle-modal-cancel").addEventListener("click", cancel);
 }
 
-function buildBundleTotalsBox(craftIds) {
+function buildBundleTotalsBox(craftIds, boxKey = "totals") {
   const needed = {};
   for (const craftId of craftIds) {
     const craft = craftsById[craftId];
@@ -546,18 +579,42 @@ function buildBundleTotalsBox(craftIds) {
   if (itemIds.length === 0) return null;
   itemIds.sort((a, b) => displayNameFor(a).localeCompare(displayNameFor(b)));
 
+  const isExpanded = expandedTotalsTrees.has(boxKey) || (document.getElementById("pinned-show-tree")?.checked || false);
+
   const box = document.createElement("div");
   box.className = "card bundle-totals";
-  box.innerHTML = '<div class="card-title-row"><span class="card-title">Total Items Needed</span></div>';
+
+  const titleRow = document.createElement("div");
+  titleRow.className = "card-title-row";
+
+  const titleSpan = document.createElement("span");
+  titleSpan.className = "card-title";
+  titleSpan.textContent = "Total Items Needed";
+  titleRow.appendChild(titleSpan);
+
+  const treeBtn = document.createElement("button");
+  treeBtn.className = isExpanded ? "secondary totals-tree-btn" : "totals-tree-btn";
+  treeBtn.textContent = isExpanded ? "Hide Crafting Trees" : "Show Crafting Trees";
+  treeBtn.title = "Toggle crafting trees for all total items needed";
+  treeBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (expandedTotalsTrees.has(boxKey)) {
+      expandedTotalsTrees.delete(boxKey);
+    } else {
+      expandedTotalsTrees.add(boxKey);
+    }
+    renderPinned();
+  });
+  titleRow.appendChild(treeBtn);
+  box.appendChild(titleRow);
+
+  const showWhere = document.getElementById("pinned-show-where")?.checked || false;
   const ul = document.createElement("ul");
   ul.className = "ingredient-list";
   for (const itemId of itemIds) {
-    const have = totals[itemId] || 0;
     const need = needed[itemId];
-    const li = document.createElement("li");
-    li.className = have >= need ? "ok" : "short";
-    li.innerHTML = `<span>${iconImgTag(itemId)}${displayNameFor(itemId)}</span><span>${have} / ${need}</span>`;
-    ul.appendChild(li);
+    ul.appendChild(buildIngredientNode(itemId, need, isExpanded, showWhere, 0, new Set()));
   }
   box.appendChild(ul);
   return box;
@@ -572,6 +629,7 @@ function getPinnedStateFingerprint() {
     completedCount: oneTimeCompletedCraftIds.length,
     builtCount: builtWgoIds.length,
     expandedTrees: Array.from(expandedTrees).sort(),
+    expandedTotalsTrees: Array.from(expandedTotalsTrees).sort(),
     showWhere
   });
 }
@@ -625,7 +683,7 @@ function renderPinned() {
     summary.appendChild(delBtn);
     details.appendChild(summary);
 
-    const totalsBox = buildBundleTotalsBox(craftIds);
+    const totalsBox = buildBundleTotalsBox(craftIds, `bundle-${bundleName}`);
     if (totalsBox) details.appendChild(totalsBox);
 
     const cardList = document.createElement("div");
@@ -650,6 +708,11 @@ function renderPinned() {
     heading.className = "pinned-flat-heading";
     heading.textContent = "All Pinned Recipes";
     list.appendChild(heading);
+  }
+
+  if (bundles.length === 0 && ids.length > 0) {
+    const allTotalsBox = buildBundleTotalsBox(ids, "all-pinned-totals");
+    if (allTotalsBox) list.appendChild(allTotalsBox);
   }
 
   const flatList = document.createElement("div");
@@ -1065,8 +1128,11 @@ function setupOnDemandControls() {
   document.getElementById("pinned-show-tree").addEventListener("input", e => {
     if (e.target.checked) {
       Object.keys(pinned).forEach(id => expandedTrees.add(id));
+      expandedTotalsTrees.add("all-pinned-totals");
+      bundles.forEach(b => expandedTotalsTrees.add(`bundle-${b}`));
     } else {
       expandedTrees.clear();
+      expandedTotalsTrees.clear();
     }
     renderPinned();
   });
