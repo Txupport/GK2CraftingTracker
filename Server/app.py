@@ -35,6 +35,15 @@ def _notify_request():
             pass
 
 
+@app.after_request
+def _add_no_cache_headers(response):
+    if request.path.startswith("/api/") or request.path in ("/", "/index.html", "/app.js", "/style.css"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
 
 def _app_dir():
     """The folder the exe/script actually lives in - NOT __file__, which

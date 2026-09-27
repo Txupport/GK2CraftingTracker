@@ -132,7 +132,7 @@ async function refreshStatus() {
     el.textContent = "Game install not found";
     el.className = "status status--bad";
     banner.hidden = false;
-    return;
+    return s;
   }
   banner.hidden = true;
   if (s.recipesFound && s.inventoryFound) {
@@ -142,6 +142,7 @@ async function refreshStatus() {
     el.textContent = "Waiting for game data (launch GK2 with the plugin installed)";
     el.className = "status status--bad";
   }
+  return s;
 }
 
 function buildProducerIndex() {
@@ -858,11 +859,16 @@ function buildBundleTotalsBox(craftIds, boxKey = "totals") {
   return box;
 }
 
+function serializeTotals(t) {
+  const keys = Object.keys(t || {}).sort();
+  return keys.map(k => `${k}:${t[k]}`).join(";");
+}
+
 function getPinnedStateFingerprint() {
   const showWhere = document.getElementById("pinned-show-where")?.checked;
   return JSON.stringify({
     pinned,
-    totals,
+    totals: serializeTotals(totals),
     unlockedCount: unlockedCraftIds.length,
     completedCount: oneTimeCompletedCraftIds.length,
     builtCount: builtWgoIds.length,
@@ -1398,37 +1404,105 @@ function setupConfigBanner() {
 }
 
 let lastInventoryFingerprint = null;
+let lastInventoryModified = null;
+let lastPinnedJson = null;
+let lastBundlesJson = null;
+let pollTimer = null;
+let isPolling = false;
+let needsRefresh = false;
 
 function getInventoryFingerprint() {
-  return JSON.stringify(totals) + "|" + unlockedCraftIds.join(",") + "|" + oneTimeCompletedCraftIds.join(",") + "|" + builtWgoIds.join(",");
+  return (
+    serializeTotals(totals) +
+    "|" +
+    unlockedCraftIds.slice().sort().join(",") +
+    "|" +
+    oneTimeCompletedCraftIds.slice().sort().join(",") +
+    "|" +
+    builtWgoIds.slice().sort().join(",")
+  );
 }
 
-async function pollLoop() {
+async function pollOnce() {
+  if (isPolling) return;
+  isPolling = true;
   try {
-    await refreshStatus();
+    const s = await refreshStatus();
+    const fileMtimeChanged = !!(s && s.inventoryModified && s.inventoryModified !== lastInventoryModified);
+    if (s && s.inventoryModified) {
+      lastInventoryModified = s.inventoryModified;
+    }
+
     await loadInventory();
     const invFp = getInventoryFingerprint();
     const invChanged = invFp !== lastInventoryFingerprint;
-    lastInventoryFingerprint = invFp;
+
+    // Synchronize pinned recipes and bundles across multiple devices
+    let pinnedChanged = false;
+    let bundlesChanged = false;
+    try {
+      const serverPinned = await fetchJSON("/api/pinned");
+      const serverPinnedJson = JSON.stringify(serverPinned);
+      if (lastPinnedJson === null) {
+        lastPinnedJson = serverPinnedJson;
+        pinned = serverPinned;
+      } else if (serverPinnedJson !== lastPinnedJson) {
+        lastPinnedJson = serverPinnedJson;
+        pinned = serverPinned;
+        pinnedChanged = true;
+      }
+
+      const serverBundles = await fetchJSON("/api/bundles");
+      const serverBundlesJson = JSON.stringify(serverBundles);
+      if (lastBundlesJson === null) {
+        lastBundlesJson = serverBundlesJson;
+        bundles = serverBundles;
+      } else if (serverBundlesJson !== lastBundlesJson) {
+        lastBundlesJson = serverBundlesJson;
+        bundles = serverBundles;
+        bundlesChanged = true;
+      }
+    } catch (e) {
+      console.warn("Could not sync pinned/bundles:", e);
+    }
 
     const active = document.activeElement;
-    const isTyping = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable);
-    if (!isTyping) {
-      const tab = currentTab();
-      if (tab === "pinned") {
-        const currentFp = getPinnedStateFingerprint();
-        if (currentFp !== lastPinnedFingerprint || invChanged) {
+    // Only pause DOM reconstruction if the user is actively typing inside a quantity input
+    // within a recipe card, so we don't disrupt their keystroke/cursor.
+    const isEditingQty = active && active.classList.contains("qty-input");
+
+    if (isEditingQty) {
+      if (invChanged || fileMtimeChanged || pinnedChanged || bundlesChanged) {
+        needsRefresh = true;
+      }
+    } else {
+      const shouldRender = invChanged || fileMtimeChanged || pinnedChanged || bundlesChanged || needsRefresh;
+      if (shouldRender) {
+        needsRefresh = false;
+        lastInventoryFingerprint = invFp;
+        const tab = currentTab();
+        if (tab === "pinned") {
           renderPinned();
+        } else {
+          renderActiveTab();
         }
-      } else if (invChanged) {
-        renderActiveTab();
+      } else {
+        lastInventoryFingerprint = invFp;
       }
     }
     updateCompletedTabBadge();
   } catch (e) {
-    console.error(e);
+    console.error("Poll error:", e);
+  } finally {
+    isPolling = false;
   }
-  setTimeout(pollLoop, 1500);
+}
+
+function pollLoop() {
+  if (pollTimer) clearTimeout(pollTimer);
+  pollOnce().finally(() => {
+    pollTimer = setTimeout(pollLoop, 1500);
+  });
 }
 
 async function loadBundles() {
@@ -1471,15 +1545,35 @@ function setupClearAllPinned() {
 }
 
 async function bootstrap() {
-  await refreshStatus();
+  const s = await refreshStatus();
+  if (s && s.inventoryModified) {
+    lastInventoryModified = s.inventoryModified;
+  }
   await loadRecipes();
   await loadInventory();
   await loadPinned();
   await loadBundles();
+  lastInventoryFingerprint = getInventoryFingerprint();
+  lastPinnedJson = JSON.stringify(pinned);
+  lastBundlesJson = JSON.stringify(bundles);
   renderActiveTab();
   updateCompletedTabBadge();
   pollLoop();
 }
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    pollOnce();
+  }
+});
+window.addEventListener("focus", () => {
+  pollOnce();
+});
+document.addEventListener("focusout", (e) => {
+  if (e.target && e.target.classList.contains("qty-input") && needsRefresh) {
+    setTimeout(pollOnce, 50);
+  }
+});
 
 setupTabs();
 setupSubtabs();

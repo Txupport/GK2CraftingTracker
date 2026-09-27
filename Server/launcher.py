@@ -269,7 +269,8 @@ class LauncherApp:
             self.root.after(0, self._on_first_connection)
 
     def _on_first_connection(self):
-        self.status_label.config(text="✓ Connected! Server is active.", fg="#4e9a06")
+        self.status_label.config(text="✓ Connected! Minimizing to tray...", fg="#4e9a06")
+        self.root.after(1000, self._minimize_to_tray)
 
     def _run_server(self):
         try:
