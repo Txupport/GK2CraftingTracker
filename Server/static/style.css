@@ -355,6 +355,40 @@ input[type="number"], select {
 }
 input[type="number"] { width: 3.5rem; }
 
+.qty-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.qty-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 1.05rem;
+  line-height: 1;
+  border-radius: 4px;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.qty-input {
+  width: 2.6rem !important;
+  text-align: center;
+  -moz-appearance: textfield;
+  padding: 0.2rem 0.1rem;
+}
+
+.qty-input::-webkit-outer-spin-button,
+.qty-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 .empty-hint {
   color: var(--text-dim);
   font-size: 0.9rem;

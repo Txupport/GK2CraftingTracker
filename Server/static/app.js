@@ -232,19 +232,65 @@ function buildRecipeCard(craft, { qty, showTree, showWhere, pinButton, unpinButt
   }
 
   if (qtyInput) {
-    const qtyLabel = document.createElement("label");
-    qtyLabel.className = "qty-label";
-    qtyLabel.innerHTML = `Qty <input type="number" min="1" value="${qty}" class="qty-input">`;
-    qtyLabel.querySelector("input").addEventListener("change", async e => {
-      const newQty = Math.max(1, parseInt(e.target.value, 10) || 1);
+    const qtyControl = document.createElement("div");
+    qtyControl.className = "qty-control";
+
+    const decBtn = document.createElement("button");
+    decBtn.className = "qty-btn qty-btn-dec";
+    decBtn.textContent = "-";
+    decBtn.title = "Decrease quantity";
+
+    const input = document.createElement("input");
+    input.type = "number";
+    input.min = "1";
+    input.value = qty;
+    input.className = "qty-input";
+
+    const incBtn = document.createElement("button");
+    incBtn.className = "qty-btn qty-btn-inc";
+    incBtn.textContent = "+";
+    incBtn.title = "Increase quantity";
+
+    const updateQty = async (newQty) => {
+      const q = Math.max(1, parseInt(newQty, 10) || 1);
       pinned = await fetchJSON(`/api/pinned/${encodeURIComponent(craft.id)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ qty: newQty }),
+        body: JSON.stringify({ qty: q }),
       });
       renderPinned();
+    };
+
+    decBtn.addEventListener("click", e => {
+      e.preventDefault();
+      e.stopPropagation();
+      updateQty(qty - 1);
     });
-    titleGroup.appendChild(qtyLabel);
+
+    incBtn.addEventListener("click", e => {
+      e.preventDefault();
+      e.stopPropagation();
+      updateQty(qty + 1);
+    });
+
+    input.addEventListener("click", e => e.stopPropagation());
+    input.addEventListener("touchstart", e => e.stopPropagation());
+
+    input.addEventListener("keydown", e => {
+      if (e.key === "Enter") {
+        input.blur();
+      }
+    });
+
+    input.addEventListener("change", async e => {
+      await updateQty(e.target.value);
+      e.target.blur();
+    });
+
+    qtyControl.appendChild(decBtn);
+    qtyControl.appendChild(input);
+    qtyControl.appendChild(incBtn);
+    titleGroup.appendChild(qtyControl);
   }
 
   card.appendChild(titleRow);
@@ -834,7 +880,11 @@ async function pollLoop() {
   try {
     await refreshStatus();
     await loadInventory();
-    renderPinned();
+    const active = document.activeElement;
+    const isTyping = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable);
+    if (!isTyping) {
+      renderPinned();
+    }
   } catch (e) {
     console.error(e);
   }
