@@ -124,10 +124,7 @@ function craftIsLearned(craft) {
 
 function craftIsCompleted(craft) {
   if (!craft || !craftHasContent(craft) || !craft.isOneTime) return false;
-  if (oneTimeCompletedCraftIds.includes(craft.id)) return true;
-  if (unlockedCraftIds.includes(craft.id)) return true;
-  if (craft.outputItems && craft.outputItems.some(o => o.itemId && unlockedCraftIds.includes(o.itemId))) return true;
-  return false;
+  return oneTimeCompletedCraftIds.includes(craft.id);
 }
 
 function craftIsTestJunk(craft) {
@@ -536,9 +533,32 @@ function renderPinned() {
 
 // ---------- Search tab ----------
 
+function craftSearchableText(craft, includeMaterials = true) {
+  const parts = [
+    craft.id,
+    prettify(craft.id),
+    craftDisplayName(craft)
+  ];
+  for (const o of craft.outputItems || []) {
+    if (o.itemId) {
+      parts.push(o.itemId);
+      parts.push(displayNameFor(o.itemId));
+    }
+  }
+  if (includeMaterials) {
+    for (const n of craft.needItems || []) {
+      if (n.itemId) {
+        parts.push(n.itemId);
+        parts.push(displayNameFor(n.itemId));
+      }
+    }
+  }
+  return parts.join(" ").toLowerCase();
+}
+
 function renderSearch() {
   const list = document.getElementById("search-list");
-  const query = document.getElementById("search").value.toLowerCase().trim();
+  const queryRaw = document.getElementById("search").value.toLowerCase().trim();
   const onlyCraftable = document.getElementById("search-only-craftable").checked;
   const includeMaterials = document.getElementById("search-include-materials").checked;
   const hideCompleted = document.getElementById("search-hide-completed").checked;
@@ -547,21 +567,23 @@ function renderSearch() {
   const showWhere = document.getElementById("search-show-where").checked;
 
   list.innerHTML = "";
-  if (!query) {
+  if (!queryRaw) {
     list.innerHTML = '<p class="empty-hint">Start typing to search recipes.</p>';
     return;
   }
 
-  const nameMatches = itemId => displayNameFor(itemId).toLowerCase().includes(query) || itemId.toLowerCase().includes(query);
+  const terms = queryRaw.split(/\s+/).filter(Boolean);
 
   let matches = recipesData.crafts.filter(craft => {
     if (!craftHasContent(craft)) return false;
     if (!showTest && craftIsTestJunk(craft)) return false;
     if (hideCompleted && craftIsCompleted(craft)) return false;
-    if (craft.id.toLowerCase().includes(query)) return true;
-    if (craft.outputItems.some(o => nameMatches(o.itemId))) return true;
-    if (includeMaterials && craft.needItems.some(n => nameMatches(n.itemId))) return true;
-    return false;
+
+    if (terms.length > 0) {
+      const text = craftSearchableText(craft, includeMaterials);
+      if (!terms.every(t => text.includes(t))) return false;
+    }
+    return true;
   });
 
   if (onlyCraftable) matches = matches.filter(c => craftIsCraftable(c, 1));
