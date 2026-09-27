@@ -135,13 +135,14 @@ async function refreshStatus() {
     return s;
   }
   banner.hidden = true;
-  if (s.recipesFound && s.inventoryFound) {
-    el.textContent = "Connected — live";
-    el.className = "status status--ok";
-  } else {
-    el.textContent = "Waiting for game data (launch GK2 with the plugin installed)";
-    el.className = "status status--bad";
-  }
+  const newText = (s.recipesFound && s.inventoryFound)
+    ? "Connected — live"
+    : "Waiting for game data (launch GK2 with the plugin installed)";
+  const newClass = (s.recipesFound && s.inventoryFound)
+    ? "status status--ok"
+    : "status status--bad";
+  if (el.textContent !== newText) el.textContent = newText;
+  if (el.className !== newClass) el.className = newClass;
   return s;
 }
 
@@ -883,17 +884,21 @@ function renderPinned() {
   lastPinnedFingerprint = getPinnedStateFingerprint();
 
   const list = document.getElementById("pinned-list");
-  const showWhere = document.getElementById("pinned-show-where").checked;
+  const showWhere = document.getElementById("pinned-show-where")?.checked || false;
   const ids = Object.keys(pinned).filter(id => craftsById[id]);
+
+  if (ids.length === 0 && bundles.length === 0) {
+    const hint = document.createElement("p");
+    hint.className = "empty-hint";
+    hint.textContent = "No recipes pinned yet. Go to Search or Browse Recipes to add some.";
+    list.replaceChildren(hint);
+    return;
+  }
 
   const openBundles = new Set();
   list.querySelectorAll("details.section[open]").forEach(d => openBundles.add(d.dataset.bundle));
 
-  list.innerHTML = "";
-  if (ids.length === 0 && bundles.length === 0) {
-    list.innerHTML = '<p class="empty-hint">No recipes pinned yet. Go to Search or Browse Recipes to add some.</p>';
-    return;
-  }
+  const frag = document.createDocumentFragment();
 
   const byBundle = {};
   for (const craftId of ids) {
@@ -945,19 +950,19 @@ function renderPinned() {
     }
     details.appendChild(cardList);
     if (craftIds.length === 0) details.open = true;
-    list.appendChild(details);
+    frag.appendChild(details);
   }
 
   if (bundles.length > 0 && ids.length > 0) {
     const heading = document.createElement("h3");
     heading.className = "pinned-flat-heading";
     heading.textContent = "All Pinned Recipes";
-    list.appendChild(heading);
+    frag.appendChild(heading);
   }
 
   if (bundles.length === 0 && ids.length > 0) {
     const allTotalsBox = buildBundleTotalsBox(ids, "all-pinned-totals");
-    if (allTotalsBox) list.appendChild(allTotalsBox);
+    if (allTotalsBox) frag.appendChild(allTotalsBox);
   }
 
   const flatList = document.createElement("div");
@@ -969,7 +974,8 @@ function renderPinned() {
       unpinButton: true, qtyInput: true, bundleSelect: true,
     }));
   }
-  list.appendChild(flatList);
+  frag.appendChild(flatList);
+  list.replaceChildren(frag);
 }
 
 // ---------- Search tab ----------
@@ -1067,14 +1073,19 @@ function renderSearch() {
   scoredMatches.sort((a, b) => b.score - a.score);
   const matches = scoredMatches.slice(0, 150).map(m => m.craft);
 
+  const frag = document.createDocumentFragment();
   if (matches.length === 0) {
-    list.innerHTML = '<p class="empty-hint">No matching recipes.</p>';
+    const hint = document.createElement("p");
+    hint.className = "empty-hint";
+    hint.textContent = "No matching recipes.";
+    list.replaceChildren(hint);
     return;
   }
 
   for (const craft of matches) {
-    list.appendChild(buildRecipeCard(craft, { qty: 1, showTree, showWhere, pinButton: { onPinned: renderSearch } }));
+    frag.appendChild(buildRecipeCard(craft, { qty: 1, showTree, showWhere, pinButton: { onPinned: renderSearch } }));
   }
+  list.replaceChildren(frag);
 }
 
 // ---------- Browse Recipes tab ----------
@@ -1185,11 +1196,14 @@ function renderGroupedSections(containerId, crafts, groupKeyFn, keyLabelFn, rere
     (groups[key] = groups[key] || []).push(craft);
   }
 
-  container.innerHTML = "";
+  const frag = document.createDocumentFragment();
   const sortedKeys = Object.keys(groups).sort((a, b) => keyLabelFn(a).localeCompare(keyLabelFn(b)));
 
   if (sortedKeys.length === 0) {
-    container.innerHTML = '<p class="empty-hint">No recipes match these filters.</p>';
+    const hint = document.createElement("p");
+    hint.className = "empty-hint";
+    hint.textContent = "No recipes match these filters.";
+    container.replaceChildren(hint);
     return;
   }
 
@@ -1210,14 +1224,15 @@ function renderGroupedSections(containerId, crafts, groupKeyFn, keyLabelFn, rere
       cardList.appendChild(buildRecipeCard(craft, { qty: 1, showTree, showWhere, pinButton: { onPinned: rerender } }));
     }
     details.appendChild(cardList);
-    container.appendChild(details);
+    frag.appendChild(details);
   }
+  container.replaceChildren(frag);
 }
 
 function renderBrowseByArea() {
   const container = document.getElementById("browse-sections-area");
-  const showTree = document.getElementById("browse-show-tree").checked;
-  const showWhere = document.getElementById("browse-show-where").checked;
+  const showTree = document.getElementById("browse-show-tree")?.checked || false;
+  const showWhere = document.getElementById("browse-show-where")?.checked || false;
   const crafts = baseBrowseCrafts();
 
   const openSections = new Set();
@@ -1240,12 +1255,15 @@ function renderBrowseByArea() {
   stationKeys.sort(byLabel);
   locationKeys.sort(byLabel);
 
-  container.innerHTML = "";
   if (stationKeys.length === 0 && locationKeys.length === 0) {
-    container.innerHTML = '<p class="empty-hint">No recipes match these filters.</p>';
+    const hint = document.createElement("p");
+    hint.className = "empty-hint";
+    hint.textContent = "No recipes match these filters.";
+    container.replaceChildren(hint);
     return;
   }
 
+  const frag = document.createDocumentFragment();
   const buildMetaSection = (metaKey, label, keys) => {
     const metaDetails = document.createElement("details");
     metaDetails.className = "section meta-section";
@@ -1279,11 +1297,12 @@ function renderBrowseByArea() {
       inner.appendChild(details);
     }
     metaDetails.appendChild(inner);
-    container.appendChild(metaDetails);
+    frag.appendChild(metaDetails);
   };
 
   if (stationKeys.length > 0) buildMetaSection("stations", "Crafting Stations", stationKeys);
   if (locationKeys.length > 0) buildMetaSection("locations", "Actual Places in the Game World", locationKeys);
+  container.replaceChildren(frag);
 }
 
 function renderBrowseByMaterial() {
@@ -1320,7 +1339,10 @@ function updateCompletedTabBadge(count) {
   }
   const btn = document.getElementById("tab-btn-completed");
   if (btn) {
-    btn.textContent = `Completed (${count})`;
+    const text = `Completed (${count})`;
+    if (btn.textContent !== text) {
+      btn.textContent = text;
+    }
   }
 }
 
@@ -1472,11 +1494,11 @@ async function pollOnce() {
     const isEditingQty = active && active.classList.contains("qty-input");
 
     if (isEditingQty) {
-      if (invChanged || fileMtimeChanged || pinnedChanged || bundlesChanged) {
+      if (invChanged || pinnedChanged || bundlesChanged) {
         needsRefresh = true;
       }
     } else {
-      const shouldRender = invChanged || fileMtimeChanged || pinnedChanged || bundlesChanged || needsRefresh;
+      const shouldRender = invChanged || pinnedChanged || bundlesChanged || needsRefresh;
       if (shouldRender) {
         needsRefresh = false;
         lastInventoryFingerprint = invFp;
