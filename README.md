@@ -4,7 +4,7 @@ A live inventory + crafting tracker for **Graveyard Keeper 2**. It reads your ac
 
 ---
 
-## 🚀 Quick Setup (Zero Installation Required!)
+Quick Setup
 
 1. **Download `GK2CraftingTracker.exe`** from the [Releases](https://github.com/Txupport/GK2CraftingTracker/releases) tab.
 2. **Double-click `GK2CraftingTracker.exe`** and press **Start**.
@@ -14,7 +14,7 @@ A live inventory + crafting tracker for **Graveyard Keeper 2**. It reads your ac
 
 ---
 
-## 🛠️ Source Code & Project Structure
+Source Code & Project Structure
 
 The entire project is 100% open source. Anyone can inspect, build, or run the code directly from source without executing pre-compiled binaries:
 
@@ -32,7 +32,7 @@ The entire project is 100% open source. Anyone can inspect, build, or run the co
 
 ---
 
-## 💻 Running from Source (Python)
+Running from Source (Python)
 
 If you prefer to inspect or run directly from Python source:
 
@@ -50,7 +50,7 @@ dotnet build -c Release
 
 ---
 
-## ✨ Features
+Features
 
 - **Zero-Friction Auto-Setup**: Auto-installs BepInEx and plugin DLLs on first run.
 - **Live Inventory & Chest Tracking**: Tracks items across your inventory and every visited container in your save.
@@ -58,9 +58,3 @@ dotnet build -c Release
 - **Recipe Pinning & Bundles**: Pin recipes and group them into bundles with a **Total Items Needed** checklist.
 - **Crafting Tree Visibility**: Expand any recipe to view required sub-ingredients and multi-tier crafting requirements.
 - **Smart Auto-Minimize**: Launcher window stays visible until a client connects, then minimizes cleanly to the system tray.
-
----
-
-## 🤝 Contributing
-
-Issues and PRs are welcome! Feel free to explore the source code in `Plugin/` and `Server/`.
