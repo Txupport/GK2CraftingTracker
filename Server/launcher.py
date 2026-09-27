@@ -30,17 +30,45 @@ GAME_PROCESS_NAME = "GraveyardKeeper2.exe"
 GAME_POLL_SECONDS = 5
 
 
+import ctypes
+
 def is_game_running():
     try:
-        out = subprocess.run(
-            ["tasklist", "/FI", f"IMAGENAME eq {GAME_PROCESS_NAME}", "/NH"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-        return GAME_PROCESS_NAME.lower() in out.stdout.lower()
-    except (OSError, subprocess.SubprocessError):
+        kernel32 = ctypes.windll.kernel32
+        hSnapshot = kernel32.CreateToolhelp32Snapshot(0x00000002, 0)
+        if hSnapshot == -1 or hSnapshot == 0:
+            return False
+            
+        class PROCESSENTRY32(ctypes.Structure):
+            _fields_ = [
+                ("dwSize", ctypes.c_ulong),
+                ("cntUsage", ctypes.c_ulong),
+                ("th32ProcessID", ctypes.c_ulong),
+                ("th32DefaultHeapID", ctypes.c_void_p),
+                ("th32ModuleID", ctypes.c_ulong),
+                ("cntThreads", ctypes.c_ulong),
+                ("th32ParentProcessID", ctypes.c_ulong),
+                ("pcPriClassBase", ctypes.c_long),
+                ("dwFlags", ctypes.c_ulong),
+                ("szExeFile", ctypes.c_char * 260)
+            ]
+            
+        pe = PROCESSENTRY32()
+        pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
+        
+        success = kernel32.Process32First(hSnapshot, ctypes.byref(pe))
+        found = False
+        target = GAME_PROCESS_NAME.lower().encode('utf-8')
+        
+        while success:
+            if target in pe.szExeFile.lower():
+                found = True
+                break
+            success = kernel32.Process32Next(hSnapshot, ctypes.byref(pe))
+            
+        kernel32.CloseHandle(hSnapshot)
+        return found
+    except Exception:
         return False
 
 

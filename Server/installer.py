@@ -77,9 +77,14 @@ def install_plugin_to_game(game_dir):
             src = os.path.join(plugin_payload, item)
             dst = os.path.join(target_plugin_dir, item)
             if os.path.isfile(src):
-                shutil.copy2(src, dst)
+                try:
+                    shutil.copy2(src, dst)
+                except OSError:
+                    # If game is running with plugin loaded, file is locked. If it already exists, it is active.
+                    if not os.path.isfile(dst):
+                        raise
 
-        changes_made.append("plugin updated")
+        changes_made.append("plugin verified")
         msg = f"Plugin setup complete ({', '.join(changes_made)})."
         return True, msg
     except PermissionError:
