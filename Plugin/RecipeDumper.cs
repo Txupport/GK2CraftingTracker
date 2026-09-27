@@ -47,77 +47,241 @@ namespace GKTrackerBridge
     {
         public static void DumpAll(GameBalance gb)
         {
-            var items = new List<ItemDefDto>();
-            foreach (var def in gb.itemDefs)
+            var itemsMap = new Dictionary<string, ItemDefDto>();
+            if (gb.itemDefs != null)
             {
-                if (def == null) continue;
-                items.Add(new ItemDefDto
+                foreach (var def in gb.itemDefs)
                 {
-                    id = def.id,
-                    displayName = ResolveDisplayName(def.id),
-                    type = def.type.ToString(),
-                    inventorySize = def.inventorySize,
-                    isSeed = def.isSeed,
-                    isFertilizer = def.isFertilizer,
-                    isBag = def.isBag,
-                    isTool = def.isTool,
-                    isProduct = def.isProduct,
-                });
+                    if (def == null || string.IsNullOrEmpty(def.id)) continue;
+                    itemsMap[def.id] = new ItemDefDto
+                    {
+                        id = def.id,
+                        displayName = ResolveDisplayName(def.id),
+                        type = def.type.ToString(),
+                        inventorySize = def.inventorySize,
+                        isSeed = def.isSeed,
+                        isFertilizer = def.isFertilizer,
+                        isBag = def.isBag,
+                        isTool = def.isTool,
+                        isProduct = def.isProduct,
+                    };
+                }
             }
 
-            var crafts = new List<CraftDefDto>();
-            foreach (var def in gb.craftDefs)
+            if (gb.wgoDefs != null)
             {
-                if (def == null) continue;
-                var dto = new CraftDefDto { id = def.id, tabId = def.tabId, isNeedsUnlock = def.isNeedsUnlock };
-                if (def.craftsIn != null) dto.craftsIn.AddRange(def.craftsIn);
-
-                if (def.needItems != null)
+                foreach (var wgo in gb.wgoDefs)
                 {
-                    foreach (var need in def.needItems)
-                    {
-                        if (need == null) continue;
-                        int count = 1;
-                        SafeEval(() => count = need.count?.EvaluateInt() ?? 1);
-                        dto.needItems.Add(new NeedItemDto
-                        {
-                            itemId = need.id,
-                            groupType = need.groupType.ToString(),
-                            count = count,
-                        });
-                    }
+                    if (wgo == null || string.IsNullOrEmpty(wgo.id)) continue;
+                    EnsureItemDef(itemsMap, wgo.id);
                 }
+            }
 
-                if (def.outputItems != null)
+            var craftMap = new Dictionary<string, CraftDefDto>();
+
+            if (gb.craftDefs != null)
+            {
+                foreach (var def in gb.craftDefs)
                 {
-                    if (def.outputItems.chanceOutputItems != null)
+                    if (def == null || string.IsNullOrEmpty(def.id)) continue;
+                    var dto = new CraftDefDto { id = def.id, tabId = def.tabId, isNeedsUnlock = def.isNeedsUnlock };
+                    if (def.craftsIn != null) dto.craftsIn.AddRange(def.craftsIn);
+
+                    if (def.needItems != null)
                     {
-                        foreach (var outItem in def.outputItems.chanceOutputItems)
+                        foreach (var need in def.needItems)
                         {
-                            if (outItem == null) continue;
-                            AddChanceOutput(dto, outItem);
+                            if (need == null) continue;
+                            int count = 1;
+                            SafeEval(() => count = need.count?.EvaluateInt() ?? 1);
+                            dto.needItems.Add(new NeedItemDto
+                            {
+                                itemId = need.id,
+                                groupType = need.groupType.ToString(),
+                                count = count,
+                            });
                         }
                     }
-                    if (def.outputItems.groupChanceOutputItems != null)
+
+                    if (def.outputItems != null)
                     {
-                        foreach (var group in def.outputItems.groupChanceOutputItems)
+                        if (def.outputItems.chanceOutputItems != null)
                         {
-                            if (group?.chanceItems == null) continue;
-                            foreach (var outItem in group.chanceItems)
+                            foreach (var outItem in def.outputItems.chanceOutputItems)
                             {
                                 if (outItem == null) continue;
                                 AddChanceOutput(dto, outItem);
                             }
                         }
+                        if (def.outputItems.groupChanceOutputItems != null)
+                        {
+                            foreach (var group in def.outputItems.groupChanceOutputItems)
+                            {
+                                if (group?.chanceItems == null) continue;
+                                foreach (var outItem in group.chanceItems)
+                                {
+                                    if (outItem == null) continue;
+                                    AddChanceOutput(dto, outItem);
+                                }
+                            }
+                        }
                     }
-                }
 
-                crafts.Add(dto);
+                    craftMap[dto.id] = dto;
+                }
             }
+
+            if (gb.buildingDefs != null)
+            {
+                foreach (var bdef in gb.buildingDefs)
+                {
+                    if (bdef == null || string.IsNullOrEmpty(bdef.id)) continue;
+                    if (craftMap.ContainsKey(bdef.id)) continue;
+
+                    var dto = new CraftDefDto
+                    {
+                        id = bdef.id,
+                        tabId = bdef.tab ?? "",
+                        isNeedsUnlock = bdef.isNeedsUnlock
+                    };
+                    if (bdef.buildsIn != null) dto.craftsIn.AddRange(bdef.buildsIn);
+
+                    if (bdef.needItems != null)
+                    {
+                        foreach (var need in bdef.needItems)
+                        {
+                            if (need == null) continue;
+                            int count = 1;
+                            SafeEval(() => count = need.count?.EvaluateInt() ?? 1);
+                            dto.needItems.Add(new NeedItemDto
+                            {
+                                itemId = need.id,
+                                groupType = need.groupType.ToString(),
+                                count = count,
+                            });
+                        }
+                    }
+
+                    if (bdef.outputItems != null)
+                    {
+                        if (bdef.outputItems.chanceOutputItems != null)
+                        {
+                            foreach (var outItem in bdef.outputItems.chanceOutputItems)
+                            {
+                                if (outItem == null) continue;
+                                AddChanceOutput(dto, outItem);
+                            }
+                        }
+                        if (bdef.outputItems.groupChanceOutputItems != null)
+                        {
+                            foreach (var group in bdef.outputItems.groupChanceOutputItems)
+                            {
+                                if (group?.chanceItems == null) continue;
+                                foreach (var outItem in group.chanceItems)
+                                {
+                                    if (outItem == null) continue;
+                                    AddChanceOutput(dto, outItem);
+                                }
+                            }
+                        }
+                    }
+
+                    if (dto.outputItems.Count == 0)
+                    {
+                        string outId = !string.IsNullOrEmpty(bdef.wgoId) ? bdef.wgoId : bdef.id;
+                        dto.outputItems.Add(new OutputItemDto
+                        {
+                            itemId = outId,
+                            outputGroupId = "",
+                            count = 1,
+                            chance = 1f
+                        });
+                        EnsureItemDef(itemsMap, outId);
+                    }
+
+                    craftMap[dto.id] = dto;
+                }
+            }
+
+            if (gb.townBuildingDefs != null)
+            {
+                foreach (var tbdef in gb.townBuildingDefs)
+                {
+                    if (tbdef == null || string.IsNullOrEmpty(tbdef.id)) continue;
+                    if (craftMap.ContainsKey(tbdef.id)) continue;
+
+                    var dto = new CraftDefDto
+                    {
+                        id = tbdef.id,
+                        tabId = "town",
+                        isNeedsUnlock = tbdef.isNeedsUnlock
+                    };
+                    if (tbdef.craftsIn != null) dto.craftsIn.AddRange(tbdef.craftsIn);
+
+                    if (tbdef.needItems != null)
+                    {
+                        foreach (var need in tbdef.needItems)
+                        {
+                            if (need == null) continue;
+                            int count = 1;
+                            SafeEval(() => count = need.count?.EvaluateInt() ?? 1);
+                            dto.needItems.Add(new NeedItemDto
+                            {
+                                itemId = need.id,
+                                groupType = need.groupType.ToString(),
+                                count = count,
+                            });
+                        }
+                    }
+
+                    if (tbdef.dropItemsOnBuildingFinished != null && tbdef.dropItemsOnBuildingFinished.chanceOutputItems != null)
+                    {
+                        foreach (var outItem in tbdef.dropItemsOnBuildingFinished.chanceOutputItems)
+                        {
+                            if (outItem == null) continue;
+                            AddChanceOutput(dto, outItem);
+                        }
+                    }
+
+                    if (dto.outputItems.Count == 0)
+                    {
+                        dto.outputItems.Add(new OutputItemDto
+                        {
+                            itemId = tbdef.id,
+                            outputGroupId = "",
+                            count = 1,
+                            chance = 1f
+                        });
+                        EnsureItemDef(itemsMap, tbdef.id);
+                    }
+
+                    craftMap[dto.id] = dto;
+                }
+            }
+
+            var items = new List<ItemDefDto>(itemsMap.Values);
+            var crafts = new List<CraftDefDto>(craftMap.Values);
 
             var payload = new { items, crafts };
             var json = JsonConvert.SerializeObject(payload, Formatting.Indented);
             File.WriteAllText(Path.Combine(TrackerPlugin.OutDir, "recipes.json"), json);
+        }
+
+        private static void EnsureItemDef(Dictionary<string, ItemDefDto> itemsMap, string id)
+        {
+            if (string.IsNullOrEmpty(id) || itemsMap.ContainsKey(id)) return;
+            itemsMap[id] = new ItemDefDto
+            {
+                id = id,
+                displayName = ResolveDisplayName(id),
+                type = "Building",
+                inventorySize = 0,
+                isSeed = false,
+                isFertilizer = false,
+                isBag = false,
+                isTool = false,
+                isProduct = false
+            };
         }
 
         private static void AddChanceOutput(CraftDefDto dto, ChanceOutputItem outItem)
@@ -138,34 +302,27 @@ namespace GKTrackerBridge
         private static void SafeEval(System.Action action)
         {
             try { action(); }
-            catch { /* some expressions need live combat/wgo context we don't have at dump time; default stands */ }
+            catch { }
         }
 
-        // Item ids don't reliably tell you display word order (e.g. "nails_bronze" needs
-        // to read "Bronze Nails"), so pull the real localized name from the game's own
-        // string table via LLBase.L, keyed the same way the game's own UI does (observed
-        // as "i_" + id from raw string scans of the game's asset data). Falls back to
-        // null (client prettifies the raw id) if no such key exists.
         internal static string DebugResolveDisplayName(string itemId) => ResolveDisplayName(itemId);
 
-        private static string ResolveDisplayName(string itemId)
+        private static string ResolveDisplayName(string id)
         {
-            if (string.IsNullOrEmpty(itemId)) return null;
+            if (string.IsNullOrEmpty(id)) return null;
             try
             {
-                var key = "i_" + itemId;
-                if (LLBase.HasL(key))
+                foreach (var prefix in new[] { "i_", "b_", "wgo_", "const_", "building_", "" })
                 {
-                    var value = LLBase.L(key);
-                    if (!string.IsNullOrEmpty(value)) return value;
-                }
-                if (LLBase.HasL(itemId))
-                {
-                    var value = LLBase.L(itemId);
-                    if (!string.IsNullOrEmpty(value)) return value;
+                    var key = prefix + id;
+                    if (LLBase.HasL(key))
+                    {
+                        var value = LLBase.L(key);
+                        if (!string.IsNullOrEmpty(value)) return value;
+                    }
                 }
             }
-            catch { /* localization not ready yet or key format unexpected; fall back client-side */ }
+            catch { }
             return null;
         }
     }

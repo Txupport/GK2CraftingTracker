@@ -1,12 +1,9 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Reflection;
 using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
-using Newtonsoft.Json;
 using UnityEngine;
 
 namespace GKTrackerBridge
@@ -18,7 +15,7 @@ namespace GKTrackerBridge
         internal static string OutDir;
 
         private Harmony _harmony;
-        private bool _recipesDumped;
+        private int _lastDumpedCraftCount = -1;
         private float _inventoryTimer;
         private const float InventoryPollSeconds = 1f;
 
@@ -42,25 +39,22 @@ namespace GKTrackerBridge
 
         private void Update()
         {
-            if (_recipesDumped) return;
             var gb = CurrentGameBalance;
             if (gb == null) return;
 
-            try
+            int totalDefs = (gb.craftDefs?.Count ?? 0) + (gb.buildingDefs?.Count ?? 0) + (gb.townBuildingDefs?.Count ?? 0);
+            if (totalDefs > 0 && totalDefs != _lastDumpedCraftCount)
             {
-                RecipeDumper.DumpAll(gb);
-                _recipesDumped = true;
-                Log.LogInfo("Recipe/item database dumped to recipes.json");
-
-                foreach (var sampleId in new[] { "wooden_plank", "nails_bronze", "ingot_bronze", "ingot_iron" })
+                try
                 {
-                    var def = gb.itemDefs.Find(d => d != null && d.id == sampleId);
-                    if (def != null) Log.LogInfo($"[name check] {sampleId} -> {RecipeDumper.DebugResolveDisplayName(sampleId)}");
+                    RecipeDumper.DumpAll(gb);
+                    _lastDumpedCraftCount = totalDefs;
+                    Log.LogInfo($"Recipe/item database dumped to recipes.json (Total defs: {totalDefs}, craftDefs: {gb.craftDefs?.Count}, buildingDefs: {gb.buildingDefs?.Count}, townBuildingDefs: {gb.townBuildingDefs?.Count})");
                 }
-            }
-            catch (Exception e)
-            {
-                Log.LogError("Recipe dump failed: " + e);
+                catch (Exception e)
+                {
+                    Log.LogError("Recipe dump failed: " + e);
+                }
             }
         }
 
@@ -77,6 +71,50 @@ namespace GKTrackerBridge
             catch (Exception e)
             {
                 Log.LogWarning("Inventory snapshot failed: " + e.Message);
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(GameBalance), "LoadGameBalance")]
+    public static class LoadGameBalancePatch
+    {
+        [HarmonyPostfix]
+        public static void Postfix()
+        {
+            try
+            {
+                var gb = TrackerPlugin.CurrentGameBalance;
+                if (gb != null)
+                {
+                    RecipeDumper.DumpAll(gb);
+                    TrackerPlugin.Log.LogInfo("LoadGameBalance Postfix: recipes.json dumped successfully!");
+                }
+            }
+            catch (Exception e)
+            {
+                TrackerPlugin.Log.LogError("LoadGameBalance Postfix error: " + e);
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(GameBalance), "CreateBuildCache")]
+    public static class CreateBuildCachePatch
+    {
+        [HarmonyPostfix]
+        public static void Postfix()
+        {
+            try
+            {
+                var gb = TrackerPlugin.CurrentGameBalance;
+                if (gb != null)
+                {
+                    RecipeDumper.DumpAll(gb);
+                    TrackerPlugin.Log.LogInfo("CreateBuildCache Postfix: recipes.json dumped successfully!");
+                }
+            }
+            catch (Exception e)
+            {
+                TrackerPlugin.Log.LogError("CreateBuildCache Postfix error: " + e);
             }
         }
     }
