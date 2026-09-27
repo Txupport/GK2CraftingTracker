@@ -38,6 +38,18 @@ h1 {
   margin: 0 0 0.5rem;
 }
 
+.version-tag {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: var(--panel-alt);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  vertical-align: middle;
+  margin-left: 0.5rem;
+}
+
 .status {
   display: inline-block;
   font-size: 0.85rem;
@@ -470,4 +482,149 @@ input[type="number"] { width: 3.5rem; }
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
+}
+
+/* Yield badge */
+.yield-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.16);
+  color: #93c5fd;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  margin-left: 0.4rem;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Alternate recipes on cards */
+.card-alts {
+  margin-top: 0.7rem;
+  padding-top: 0.55rem;
+  border-top: 1px dashed var(--border);
+  font-size: 0.82rem;
+}
+.card-alts-title {
+  color: var(--text-dim);
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.card-alts-icon {
+  color: var(--accent);
+  font-size: 0.95rem;
+}
+.card-alts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.alt-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.3rem 0.55rem;
+  border-radius: 6px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  transition: all 0.15s ease;
+}
+.alt-pill--ready {
+  border-color: rgba(94, 206, 138, 0.4);
+  background: rgba(94, 206, 138, 0.08);
+}
+.alt-pill--done {
+  opacity: 0.6;
+}
+.alt-pill-info {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.alt-pill-needs {
+  font-weight: 500;
+  color: var(--text);
+}
+.alt-pill-arrow {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+.alt-pill-yield {
+  color: #93c5fd;
+  font-weight: 600;
+}
+.alt-pill-station {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+.alt-pill-pin {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  white-space: nowrap;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+}
+.alt-pill-pin:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.alt-pill-pin.pinned, .alt-pill-pin:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Tree yield & runs tags */
+.tree-yield-tag {
+  color: #93c5fd;
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-left: 0.35rem;
+}
+.tree-runs-tag {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  margin-left: 0.3rem;
+  font-style: italic;
+}
+.tree-alt-switcher {
+  display: flex !important;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0 !important;
+  margin: 0.2rem 0;
+  font-size: 0.78rem;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 4px;
+}
+.tree-alt-label {
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+.tree-alt-btn {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.45rem;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.tree-alt-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }

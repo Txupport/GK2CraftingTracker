@@ -1,7 +1,9 @@
 let recipesData = { items: [], crafts: [] };
 let itemsById = {};
 let craftsById = {};
-let producerIndex = {};   // itemId -> { craft, outputCount }
+let producerIndex = {};   // itemId -> { craft, outputCount } (active/chosen producer)
+let producersByItem = {}; // itemId -> array of { craft, outputCount } (all valid producers)
+let preferredProducer = {}; // itemId -> craftId (user preferred producer stored in localStorage)
 let totals = {};
 let containers = [];
 let unlockedCraftIds = [];
@@ -25,6 +27,8 @@ function prettify(id) {
   if (!id) return "";
   if (PRETTIFIED_GROUPS[id]) return PRETTIFIED_GROUPS[id];
   let clean = id
+    .replace(/^gr_/i, "")
+    .replace(/^conv_/, "Conveyor: ")
     .replace(/_[spr]$/i, "")
     .replace(/_place$/i, "")
     .replace(/_clr\d+(_xxs)?$/i, "")
@@ -69,6 +73,12 @@ const NAME_OVERRIDES = {
   "upgrade_church_2_s": "Church Upgrade II",
   "upgrade_church_3": "Church Upgrade III",
   "upgrade_church_3_s": "Church Upgrade III",
+  "upgrade_church_2_tech": "Church Upgrade II (Tech)",
+  "upgrade_church_2_tech_s": "Church Upgrade II (Tech)",
+  "upgrade_church_3_tech": "Church Upgrade III (Tech)",
+  "upgrade_church_3_tech_s": "Church Upgrade III (Tech)",
+  "church_train_unlock": "Church Train Unlock",
+  "church_train_unlock_s": "Church Train Unlock",
   "upgrade_graveyard_fence_1": "Graveyard Fence Upgrade I",
   "upgrade_graveyard_fence_2": "Graveyard Fence Upgrade II",
   "vineyard_upgrade": "Vineyard Upgrade",
@@ -86,10 +96,20 @@ const NAME_OVERRIDES = {
 };
 
 function displayNameFor(itemId) {
+  if (!itemId) return "";
   if (NAME_OVERRIDES[itemId]) return NAME_OVERRIDES[itemId];
   const item = itemsById[itemId];
-  if (item && item.displayName) return item.displayName;
-  return prettify(itemId);
+  let name = (item && item.displayName) ? item.displayName : prettify(itemId);
+  const match = itemId.match(/:(\d+)$/);
+  if (match) {
+    const q = match[1];
+    const qualityNames = { "1": "Bronze", "2": "Silver", "3": "Gold" };
+    const qName = qualityNames[q] || `Tier ${q}`;
+    if (!name.includes(qName) && !name.match(/\b(I|II|III|IV)\b/)) {
+      name = `${name} (${qName})`;
+    }
+  }
+  return name;
 }
 
 function iconImgTag(itemId) {
@@ -126,13 +146,58 @@ async function refreshStatus() {
 
 function buildProducerIndex() {
   producerIndex = {};
+  producersByItem = {};
+
+  try {
+    const saved = localStorage.getItem("gk2_preferred_producers");
+    if (saved) preferredProducer = JSON.parse(saved);
+  } catch (e) {}
+
   for (const craft of recipesData.crafts) {
-    if (craftIsTestJunk(craft)) continue;
+    if (!craftHasContent(craft) || craftIsTestJunk(craft)) continue;
     for (const out of craft.outputItems) {
-      if (!out.itemId || out.itemId in producerIndex) continue;
-      producerIndex[out.itemId] = { craft, outputCount: out.count || 1 };
+      if (!out.itemId) continue;
+      const outputCount = out.count || 1;
+      if (!producersByItem[out.itemId]) producersByItem[out.itemId] = [];
+      if (!producersByItem[out.itemId].some(p => p.craft.id === craft.id)) {
+        producersByItem[out.itemId].push({ craft, outputCount });
+      }
     }
   }
+
+  for (const itemId in producersByItem) {
+    const candidates = producersByItem[itemId];
+    if (candidates.length === 1) {
+      producerIndex[itemId] = candidates[0];
+      continue;
+    }
+
+    const prefId = preferredProducer[itemId];
+    const userMatch = candidates.find(c => c.craft.id === prefId);
+    if (userMatch) {
+      producerIndex[itemId] = userMatch;
+      continue;
+    }
+
+    let best = candidates[0];
+    const readyCandidate = candidates.find(c => craftIsCraftable(c.craft, 1));
+    const learnedCandidate = candidates.find(c => craftIsLearned(c.craft));
+    if (readyCandidate) best = readyCandidate;
+    else if (learnedCandidate) best = learnedCandidate;
+    producerIndex[itemId] = best;
+  }
+}
+
+function setPreferredProducer(itemId, craftId) {
+  preferredProducer[itemId] = craftId;
+  try {
+    localStorage.setItem("gk2_preferred_producers", JSON.stringify(preferredProducer));
+  } catch (e) {}
+  buildProducerIndex();
+  renderPinned();
+  const activeTab = document.querySelector(".tab-btn.active")?.dataset.tab;
+  if (activeTab === "crafts") renderSearch();
+  else if (activeTab === "browse") renderBrowse();
 }
 
 async function loadRecipes() {
@@ -151,6 +216,7 @@ async function loadInventory() {
   unlockedCraftIds = inv.unlockedCraftIds || [];
   oneTimeCompletedCraftIds = inv.oneTimeCompletedCraftIds || [];
   builtWgoIds = inv.builtWgoIds || [];
+  buildProducerIndex();
 }
 
 function sourcesFor(itemId) {
@@ -193,12 +259,32 @@ const WGO_ALIASES = {
   "chest_rough_place_p": ["wood_container"],
   "unlock_graveyard_zone_1": ["graveyard_module_grave_1"],
   "unlock_graveyard_zone_1_s": ["graveyard_module_grave_1"],
+  "unlock_graveyard_zone_2": ["graveyard_module_grave_2", "graveyard_module_grave_3", "graveyard_module_grave_4"],
+  "unlock_graveyard_zone_2_s": ["graveyard_module_grave_2", "graveyard_module_grave_3", "graveyard_module_grave_4"],
+  "unlock_graveyard_zone_3": ["graveyard_module_grave_3", "graveyard_module_grave_4"],
+  "unlock_graveyard_zone_3_s": ["graveyard_module_grave_3", "graveyard_module_grave_4"],
+  "garden_compost_pile": ["compost_pile_1", "compost_pile_2"],
+  "garden_compost_pile_s": ["compost_pile_1", "compost_pile_2"],
+  "garden_compost_pile_upgrade": ["compost_pile_2"],
+  "garden_compost_pile_upgrade_s": ["compost_pile_2"],
   "kitchen_table_repair": ["kitchen_table", "kitchen_table_t2"],
   "kitchen_oven_repair": ["kitchen_oven", "kitchen_oven_t2"],
   "kitchen_table_up_s": ["kitchen_table_t2"],
   "kitchen_table_up": ["kitchen_table_t2"],
   "kitchen_oven_up_s": ["kitchen_oven_t2"],
   "kitchen_oven_up": ["kitchen_oven_t2"],
+  "upgrade_church_1": ["church_t1", "church_t2", "church_t3"],
+  "upgrade_church_1_s": ["church_t1", "church_t2", "church_t3"],
+  "upgrade_church_2": ["church_t2", "church_t3"],
+  "upgrade_church_2_s": ["church_t2", "church_t3"],
+  "upgrade_church_3": ["church_t3"],
+  "upgrade_church_3_s": ["church_t3"],
+  "upgrade_church_2_tech": ["church_t2", "church_t3"],
+  "upgrade_church_2_tech_s": ["church_t2", "church_t3"],
+  "upgrade_church_3_tech": ["church_t3"],
+  "upgrade_church_3_tech_s": ["church_t3"],
+  "church_train_unlock": ["church_train_unlock"],
+  "church_train_unlock_s": ["church_train_unlock"],
 };
 
 const SCENE_STATIC_MARKERS = new Set([
@@ -249,7 +335,7 @@ function craftIsCompleted(craft) {
 
     // For church blockages: completed if church has been unlocked/entered and obstacle is cleared
     if (cidLower.startsWith("church_blockage_")) {
-      return builtSet.has("builder_church") || builtSet.has("church_t0");
+      return builtSet.has("builder_church") || builtSet.has("church_t0") || builtSet.has("church_t1") || builtSet.has("church_t2") || builtSet.has("church_t3");
     }
 
     // For chained blockages: base_blockage_2 requires base_blockage_1 to be cleared first
@@ -296,11 +382,55 @@ function craftIsTestJunk(craft) {
   return /(^|_)test(_|s_|$)/i.test(craft.id);
 }
 
+function craftVariantLabel(craft) {
+  if (!craft || !craft.outputItems || craft.outputItems.length === 0) return "";
+  const primaryOut = craft.outputItems.find(o => (o.count || 1) > 0) || craft.outputItems[0];
+  const outId = primaryOut.itemId;
+  const sisters = (producersByItem[outId] || []).map(p => p.craft);
+  if (sisters.length <= 1) return "";
+
+  const myInputs = (craft.needItems || []).map(n => n.itemId);
+  const myCoreInputs = myInputs.filter(id => id !== 'fire' && id !== 'water');
+  const targetInputs = myCoreInputs.length > 0 ? myCoreInputs : myInputs;
+
+  for (const inputId of targetInputs) {
+    const isDistinct = sisters.some(other => {
+      if (other.id === craft.id) return false;
+      return !(other.needItems || []).some(n => n.itemId === inputId);
+    });
+    if (isDistinct) {
+      return `from ${displayNameFor(inputId)}`;
+    }
+  }
+
+  const myWgos = (craft.craftsIn || []).filter(w => !w.includes('signboard'));
+  if (myWgos.length > 0) {
+    const isStationDistinct = sisters.some(other => {
+      if (other.id === craft.id) return false;
+      const otherWgos = (other.craftsIn || []).filter(w => !w.includes('signboard'));
+      return !otherWgos.includes(myWgos[0]);
+    });
+    if (isStationDistinct) {
+      return prettify(myWgos[0]);
+    }
+  }
+
+  const yieldCount = primaryOut.count || 1;
+  const idMatch = craft.id.match(/_(\d+)$/);
+  if (idMatch) {
+    return `Tier ${idMatch[1]} (yields ${yieldCount})`;
+  }
+
+  return `yields ${yieldCount}`;
+}
+
 function craftDisplayName(craft) {
   if (NAME_OVERRIDES[craft.id]) return NAME_OVERRIDES[craft.id];
-  return craft.outputItems.length > 0
+  const baseName = craft.outputItems.length > 0
     ? craft.outputItems.map(o => displayNameFor(o.itemId)).join(", ")
     : prettify(craft.id);
+  const variant = craftVariantLabel(craft);
+  return variant ? `${baseName} (${variant})` : baseName;
 }
 
 function buildWhereBlock(itemId) {
@@ -338,14 +468,50 @@ function buildIngredientNode(itemId, neededQty, showTree, showWhere, depth, visi
   details.className = "tree-node";
   details.open = true;
   const summary = document.createElement("summary");
-  summary.innerHTML = `<span>${iconImgTag(itemId)}${displayNameFor(itemId)}</span><span>${have} / ${neededQty}</span>`;
+
+  const outCount = producer.outputCount || 1;
+  const yieldTag = outCount > 1
+    ? `<span class="tree-yield-tag">(makes ${outCount}/craft)</span>`
+    : "";
+
+  const runs = Math.ceil(neededQty / outCount);
+  const runsTag = runs > 1
+    ? `<span class="tree-runs-tag">[${runs} crafts needed]</span>`
+    : "";
+
+  summary.innerHTML = `<span>${iconImgTag(itemId)}${displayNameFor(itemId)}${yieldTag}${runsTag}</span><span>${have} / ${neededQty}</span>`;
   details.appendChild(summary);
 
-  const runs = Math.ceil(neededQty / (producer.outputCount || 1));
   const subUl = document.createElement("ul");
   subUl.className = "ingredient-list";
   const nextVisited = new Set(visited);
   nextVisited.add(itemId);
+
+  const sisters = (producersByItem[itemId] || []).filter(p => p.craft.id !== producer.craft.id);
+  if (sisters.length > 0) {
+    const switchLi = document.createElement("li");
+    switchLi.className = "tree-alt-switcher";
+    switchLi.innerHTML = `<span class="tree-alt-label">⇄ Alt recipe:</span>`;
+    for (const alt of sisters) {
+      const altNeeds = alt.craft.needItems
+        .filter(n => n.itemId !== 'fire')
+        .map(n => `${n.count}x ${displayNameFor(n.itemId)}`)
+        .join(', ');
+      const altYield = alt.outputCount || 1;
+      const btn = document.createElement("button");
+      btn.className = "tree-alt-btn";
+      btn.textContent = `Use ${altNeeds} (makes ${altYield})`;
+      btn.title = `Switch crafting tree to use ${craftDisplayName(alt.craft)}`;
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setPreferredProducer(itemId, alt.craft.id);
+      });
+      switchLi.appendChild(btn);
+    }
+    subUl.appendChild(switchLi);
+  }
+
   for (const sub of producer.craft.needItems) {
     subUl.appendChild(buildIngredientNode(sub.itemId, sub.count * runs, showTree, showWhere, depth + 1, nextVisited));
   }
@@ -382,10 +548,14 @@ function buildRecipeCard(craft, { qty, showTree, showWhere, pinButton, unpinButt
     badgeHtml = `<span class="card-badge ${allOk ? 'card-badge--ready' : 'card-badge--missing'}">${allOk ? 'Ready' : 'Missing items'}</span>`;
   }
 
+  const primaryOut = craft.outputItems.find(o => (o.count || 1) > 0) || craft.outputItems[0];
+  const yieldCount = primaryOut ? (primaryOut.count || 1) : 1;
+  const yieldBadgeHtml = yieldCount > 1 ? `<span class="yield-badge" title="Each craft makes ${yieldCount}">Makes ${yieldCount}</span>` : "";
+
   const titleRow = document.createElement("div");
   titleRow.className = "card-title-row";
   titleRow.innerHTML = `
-    <span class="card-title-group"><span class="card-title">${iconImgTag(craft.outputItems[0]?.itemId)}${craftDisplayName(craft)}</span></span>
+    <span class="card-title-group"><span class="card-title">${iconImgTag(primaryOut?.itemId)}${craftDisplayName(craft)}</span>${yieldBadgeHtml}</span>
     ${badgeHtml}
   `;
   const titleGroup = titleRow.querySelector(".card-title-group");
@@ -466,6 +636,74 @@ function buildRecipeCard(craft, { qty, showTree, showWhere, pinButton, unpinButt
 
   if (craft.needItems.length > 0) {
     card.appendChild(buildIngredientList(craft.needItems, qty, showTree, showWhere));
+  }
+
+  if (primaryOut && primaryOut.itemId) {
+    const alts = (producersByItem[primaryOut.itemId] || []).filter(p => p.craft.id !== craft.id);
+    if (alts.length > 0) {
+      const altsContainer = document.createElement("div");
+      altsContainer.className = "card-alts";
+
+      const altsTitle = document.createElement("div");
+      altsTitle.className = "card-alts-title";
+      altsTitle.innerHTML = `<span class="card-alts-icon">⇄</span> <span>Alternate Materials / Recipes (${alts.length}):</span>`;
+      altsContainer.appendChild(altsTitle);
+
+      const altsList = document.createElement("div");
+      altsList.className = "card-alts-list";
+
+      for (const alt of alts) {
+        const altCraft = alt.craft;
+        const altYield = alt.outputCount || 1;
+        const isAltReady = craftIsCraftable(altCraft, 1);
+        const isAltDone = craftIsCompleted(altCraft);
+
+        const pill = document.createElement("div");
+        pill.className = `alt-pill ${isAltReady ? 'alt-pill--ready' : ''} ${isAltDone ? 'alt-pill--done' : ''}`;
+
+        const needDesc = altCraft.needItems
+          .filter(n => n.itemId !== 'fire')
+          .map(n => `${n.count}x ${displayNameFor(n.itemId)}`)
+          .join(', ');
+
+        const stationName = altCraft.craftsIn && altCraft.craftsIn.length > 0
+          ? prettify(altCraft.craftsIn[0])
+          : '';
+
+        pill.innerHTML = `
+          <div class="alt-pill-info">
+            <span class="alt-pill-needs">${needDesc}</span>
+            <span class="alt-pill-arrow">➔</span>
+            <span class="alt-pill-yield">Makes ${altYield}</span>
+            ${stationName ? `<span class="alt-pill-station">@ ${stationName}</span>` : ''}
+          </div>
+        `;
+
+        const isAltPinned = !!pinned[altCraft.id];
+        const altPinBtn = document.createElement("button");
+        altPinBtn.className = isAltPinned ? "alt-pill-pin pinned" : "alt-pill-pin";
+        altPinBtn.textContent = isAltPinned ? "Pinned" : "+ Pin";
+        altPinBtn.title = isAltPinned ? "Already pinned" : "Pin this alternate recipe";
+        altPinBtn.disabled = isAltPinned;
+        altPinBtn.addEventListener("click", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          pinned = await fetchJSON(`/api/pinned/${encodeURIComponent(altCraft.id)}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ qty: 1 }),
+          });
+          renderPinned();
+          const activeTab = document.querySelector(".tab-btn.active")?.dataset.tab;
+          if (activeTab === "crafts") renderSearch();
+          else if (activeTab === "browse") renderBrowse();
+        });
+        pill.appendChild(altPinBtn);
+        altsList.appendChild(pill);
+      }
+      altsContainer.appendChild(altsList);
+      card.appendChild(altsContainer);
+    }
   }
 
   const actions = document.createElement("div");
@@ -630,6 +868,7 @@ function getPinnedStateFingerprint() {
     builtCount: builtWgoIds.length,
     expandedTrees: Array.from(expandedTrees).sort(),
     expandedTotalsTrees: Array.from(expandedTotalsTrees).sort(),
+    preferredProducer,
     showWhere
   });
 }
@@ -733,7 +972,8 @@ function craftSearchableText(craft, includeMaterials = true) {
   const parts = [
     craft.id,
     prettify(craft.id),
-    craftDisplayName(craft)
+    craftDisplayName(craft),
+    craftVariantLabel(craft)
   ];
   for (const cin of craft.craftsIn || []) {
     parts.push(cin);
@@ -769,8 +1009,10 @@ function scoreSearchMatch(craft, queryRaw, terms) {
   if (terms.every(t => cid.includes(t))) score += 50;
 
   for (const o of craft.outputItems || []) {
-    if (o.itemId && displayNameFor(o.itemId).toLowerCase().includes(queryRaw)) {
-      score += 80;
+    if (o.itemId) {
+      const dName = displayNameFor(o.itemId).toLowerCase();
+      if (dName === queryRaw) score += 300;
+      else if (dName.includes(queryRaw)) score += 80;
     }
   }
 
