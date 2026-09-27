@@ -108,9 +108,66 @@ def _make_qr(url):
     return ImageTk.PhotoImage(qr_img)
 
 
+def _terminate_prior_tracker_instances():
+    """If a previous version of GK2CraftingTracker is still lingering in the background
+    or system tray, terminate it so it doesn't hold port 5151 or serve stale files."""
+    my_pid = os.getpid()
+    parent_pid = os.getppid() if hasattr(os, "getppid") else None
+
+    # 1. Try psutil if available
+    try:
+        import psutil
+
+        for proc in psutil.process_iter(["pid", "name"]):
+            try:
+                pid = proc.info["pid"]
+                if pid in (my_pid, parent_pid):
+                    continue
+                name = (proc.info["name"] or "").lower()
+                # Target GK2CraftingTracker, GK2CraftingTracker (1), etc.
+                # NEVER match GraveyardKeeper2!
+                if "craftingtracker" in name and "graveyard" not in name:
+                    proc.kill()
+            except Exception:
+                pass
+        return
+    except Exception:
+        pass
+
+    # 2. Windows fallback using tasklist and taskkill
+    if sys.platform == "win32":
+        try:
+            out = subprocess.check_output(
+                "tasklist /fo csv /nh",
+                shell=True,
+                text=True,
+                stderr=subprocess.DEVNULL,
+            )
+            for line in out.splitlines():
+                parts = line.strip().split('","')
+                if len(parts) >= 2:
+                    pname = parts[0].strip('"').lower()
+                    pid_str = parts[1].strip('"')
+                    if "craftingtracker" in pname and "graveyard" not in pname:
+                        try:
+                            pid = int(pid_str)
+                            if pid not in (my_pid, parent_pid):
+                                subprocess.call(
+                                    f"taskkill /F /PID {pid}",
+                                    shell=True,
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
+                                )
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+
 class LauncherApp:
 
     def __init__(self):
+        _terminate_prior_tracker_instances()
         self.root = tk.Tk()
         self.root.title("GK2 Recipe Tracker")
         self.root.resizable(False, False)
@@ -229,6 +286,8 @@ class LauncherApp:
     def _on_start(self):
         if self._server_started:
             return
+
+        _terminate_prior_tracker_instances()
 
         try:
             _, game_dir = gk2_locate.resolve_data_dir()
