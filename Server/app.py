@@ -8,6 +8,7 @@ for pinning recipes and watching live readiness.
 import json
 import os
 import socket
+import subprocess
 import sys
 import threading
 
@@ -237,23 +238,61 @@ def delete_bundle(name):
     return jsonify(bundles)
 
 
+def _get_lan_default_gateway_interfaces():
+    preferred_ips = []
+    if sys.platform == "win32":
+        try:
+            out = subprocess.check_output(
+                "route print 0.0.0.0", shell=True, text=True, stderr=subprocess.DEVNULL
+            )
+            in_table = False
+            for line in out.splitlines():
+                line = line.strip()
+                if "Active Routes:" in line:
+                    in_table = True
+                    continue
+                if in_table:
+                    if line.startswith("0.0.0.0"):
+                        parts = line.split()
+                        if len(parts) >= 4:
+                            interface_ip = parts[3]
+                            if not (
+                                interface_ip.startswith("100.")
+                                or interface_ip.startswith("127.")
+                            ):
+                                preferred_ips.append(interface_ip)
+                    elif line.startswith("=") or (
+                        line.startswith("Persistent") and preferred_ips
+                    ):
+                        break
+        except Exception:
+            pass
+    return preferred_ips
+
+
 def _rank(ip):
     """Lower is better. Prefers ordinary home-LAN ranges over VPN/CGNAT (100.64.0.0/10,
     used by Tailscale/NordLynx/etc.) or other virtual-adapter addresses, since a VPN
     being active shouldn't hijack the address we tell people to use on their phone."""
-    octets = [int(p) for p in ip.split(".")]
-    if octets[0] == 192 and octets[1] == 168:
-        return 0
-    if octets[0] == 10:
-        return 2
-    if octets[0] == 172 and 16 <= octets[1] <= 31:
-        return 2
-    if octets[0] == 100 and 64 <= octets[1] <= 127:
-        return 9  # CGNAT range: Tailscale, NordLynx, carrier-grade NAT, etc.
-    return 5
+    try:
+        octets = [int(p) for p in ip.split(".")]
+        if len(octets) != 4:
+            return 99
+        if octets[0] == 192 and octets[1] == 168:
+            return 0
+        if octets[0] == 10:
+            return 2
+        if octets[0] == 172 and 16 <= octets[1] <= 31:
+            return 2
+        if octets[0] == 100 and 64 <= octets[1] <= 127:
+            return 9  # CGNAT range: Tailscale, NordLynx, carrier-grade NAT, etc.
+        return 5
+    except Exception:
+        return 99
 
 
 def _candidate_lan_ips():
+    preferred = _get_lan_default_gateway_interfaces()
     hostname = socket.gethostname()
     ips = set()
     try:
@@ -262,7 +301,15 @@ def _candidate_lan_ips():
     except OSError:
         pass
     ips.discard("127.0.0.1")
-    return sorted(ips, key=_rank)
+    for p in preferred:
+        ips.add(p)
+
+    def rank_key(ip):
+        if ip in preferred:
+            return (0, preferred.index(ip))
+        return (1, _rank(ip))
+
+    return sorted(ips, key=rank_key)
 
 
 if __name__ == "__main__":

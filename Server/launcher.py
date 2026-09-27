@@ -79,6 +79,35 @@ def _tray_icon_image():
     return img
 
 
+import json
+
+CONFIG_FILE = os.path.join(tracker_app._app_dir(), "launcher_config.json")
+
+
+def _load_browser_pref():
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return bool(data.get("open_in_browser", True))
+    except Exception:
+        pass
+    return True
+
+
+def _save_browser_pref(val):
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump({"open_in_browser": bool(val)}, f)
+    except Exception:
+        pass
+
+
+def _make_qr(url):
+    qr_img = qrcode.make(url).resize((200, 200))
+    return ImageTk.PhotoImage(qr_img)
+
+
 class LauncherApp:
 
     def __init__(self):
@@ -87,8 +116,8 @@ class LauncherApp:
         self.root.resizable(False, False)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close_button)
 
-        candidates = tracker_app._candidate_lan_ips()
-        self.lan_ip = candidates[0] if candidates else "127.0.0.1"
+        self.candidates = tracker_app._candidate_lan_ips()
+        self.lan_ip = self.candidates[0] if self.candidates else "127.0.0.1"
         self.url = f"http://{self.lan_ip}:{PORT}"
 
         self.tray_icon = None
@@ -104,37 +133,78 @@ class LauncherApp:
         mono_font = tkfont.Font(family="Consolas", size=10)
 
         tk.Label(self.root, text="GK2 Recipe Tracker", font=title_font).pack(
-            padx=16, pady=(16, 8)
+            padx=16, pady=(14, 6)
         )
         tk.Label(
             self.root, text=f"This PC:      http://localhost:{PORT}", font=mono_font
         ).pack(anchor="w", padx=16)
-        tk.Label(
+        self.lan_url_label = tk.Label(
             self.root, text=f"Phone/tablet: {self.url}", font=mono_font
-        ).pack(anchor="w", padx=16, pady=(0, 10))
+        )
+        self.lan_url_label.pack(anchor="w", padx=16, pady=(0, 4))
 
-        qr_img = qrcode.make(self.url).resize((200, 200))
-        self._qr_photo = ImageTk.PhotoImage(qr_img)
-        tk.Label(self.root, image=self._qr_photo).pack(pady=4)
+        if len(self.candidates) > 1:
+            ip_frame = tk.Frame(self.root)
+            ip_frame.pack(anchor="w", padx=16, pady=(0, 6))
+            tk.Label(ip_frame, text="Network IP:", fg="#888", font=("Segoe UI", 9)).pack(side="left")
+            self.ip_var = tk.StringVar(value=self.lan_ip)
+            ip_menu = tk.OptionMenu(ip_frame, self.ip_var, *self.candidates, command=self._on_ip_changed)
+            ip_menu.config(font=("Segoe UI", 8), pady=0)
+            ip_menu.pack(side="left", padx=4)
+
+        self._qr_photo = _make_qr(self.url)
+        self.qr_label = tk.Label(self.root, image=self._qr_photo)
+        self.qr_label.pack(pady=4)
         tk.Label(
             self.root, text="Scan to open on your phone/tablet", fg="#888"
-        ).pack(pady=(0, 6))
+        ).pack(pady=(0, 4))
 
         self.plugin_label = tk.Label(
             self.root, text="", fg="#55aaff", font=("Segoe UI", 9)
         )
-        self.plugin_label.pack(pady=(0, 4))
+        self.plugin_label.pack(pady=(0, 2))
 
         self.status_label = tk.Label(self.root, text="Not started", fg="#888")
         self.status_label.pack(pady=(0, 6))
 
-        self.start_btn = tk.Button(
-            self.root, text="Start", width=22, command=self._on_start
+        # Checkbox: "Open in browser window"
+        self.open_browser_var = tk.BooleanVar(value=_load_browser_pref())
+        self.open_browser_check = tk.Checkbutton(
+            self.root,
+            text="Open in browser window",
+            variable=self.open_browser_var,
+            command=lambda: _save_browser_pref(self.open_browser_var.get()),
+            font=("Segoe UI", 9)
         )
-        self.start_btn.pack(pady=(0, 16))
+        self.open_browser_check.pack(pady=(0, 8))
+
+        btn_frame = tk.Frame(self.root)
+        btn_frame.pack(pady=(0, 14))
+
+        self.start_btn = tk.Button(
+            btn_frame, text="Start", width=11, command=self._on_start, font=("Segoe UI", 9, "bold")
+        )
+        self.start_btn.pack(side="left", padx=3)
+
+        self.browser_btn = tk.Button(
+            btn_frame, text="Open Browser", width=12, command=self._open_browser, font=("Segoe UI", 9)
+        )
+        self.browser_btn.pack(side="left", padx=3)
+
+        self.tray_btn = tk.Button(
+            btn_frame, text="Minimize to Tray", width=13, command=self._minimize_to_tray, font=("Segoe UI", 9)
+        )
+        self.tray_btn.pack(side="left", padx=3)
 
         # Check plugin setup on window load
         self.root.after(100, self._auto_setup_plugin)
+
+    def _on_ip_changed(self, new_ip):
+        self.lan_ip = new_ip
+        self.url = f"http://{self.lan_ip}:{PORT}"
+        self.lan_url_label.config(text=f"Phone/tablet: {self.url}")
+        self._qr_photo = _make_qr(self.url)
+        self.qr_label.config(image=self._qr_photo)
 
     def _auto_setup_plugin(self):
         try:
@@ -185,10 +255,13 @@ class LauncherApp:
 
         self._server_started = True
         self.start_btn.config(state="disabled")
-        self.status_label.config(text="Running - waiting for connection...")
+        self.status_label.config(text="Running - waiting for connection...", fg="#888")
 
         threading.Thread(target=self._run_server, daemon=True).start()
         threading.Thread(target=self._monitor_game, daemon=True).start()
+
+        if self.open_browser_var.get():
+            self.root.after(300, self._open_browser)
 
     def _on_client_request(self):
         if not self._connected and self._server_started:
@@ -196,8 +269,7 @@ class LauncherApp:
             self.root.after(0, self._on_first_connection)
 
     def _on_first_connection(self):
-        self.status_label.config(text="Client connected! Minimizing to tray...")
-        self.root.after(600, self._minimize_to_tray)
+        self.status_label.config(text="✓ Connected! Server is active.", fg="#4e9a06")
 
     def _run_server(self):
         try:
@@ -234,7 +306,9 @@ class LauncherApp:
             threading.Thread(target=self.tray_icon.run, daemon=True).start()
 
     def _open_browser(self, icon=None, item=None):
-        webbrowser.open(self.url)
+        if not self._server_started:
+            self._on_start()
+        webbrowser.open(f"http://localhost:{PORT}")
 
     def _restore_window(self, icon=None, item=None):
         self.root.after(0, self.root.deiconify)
