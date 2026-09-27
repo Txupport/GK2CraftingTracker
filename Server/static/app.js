@@ -111,7 +111,7 @@ async function loadPinned() {
 }
 
 function craftHasContent(craft) {
-  return craft.needItems.length > 0 || craft.outputItems.length > 0;
+  return craft && Array.isArray(craft.needItems) && craft.needItems.length > 0;
 }
 
 function craftIsCraftable(craft, qty) {
@@ -123,13 +123,10 @@ function craftIsLearned(craft) {
 }
 
 function craftIsCompleted(craft) {
-  if (!craft) return false;
+  if (!craft || !craftHasContent(craft) || !craft.isOneTime) return false;
   if (oneTimeCompletedCraftIds.includes(craft.id)) return true;
   if (builtWgoIds.includes(craft.id)) return true;
   if (craft.outputItems && craft.outputItems.some(o => o.itemId && builtWgoIds.includes(o.itemId))) return true;
-  if (craft.isOneTime) {
-    if (craft.craftsIn && craft.craftsIn.some(cin => builtWgoIds.includes(cin))) return true;
-  }
   return false;
 }
 
