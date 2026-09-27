@@ -21,6 +21,9 @@ import pystray
 import qrcode
 from PIL import Image, ImageDraw, ImageTk
 
+import gk2_locate
+import installer
+from tkinter import filedialog, messagebox
 import app as tracker_app
 
 PORT = 5151
@@ -38,7 +41,6 @@ def is_game_running():
         return GAME_PROCESS_NAME.lower() in out.stdout.lower()
     except (OSError, subprocess.SubprocessError):
         return False
-
 
 
 def _tray_icon_image():
@@ -78,7 +80,10 @@ class LauncherApp:
         qr_img = qrcode.make(self.url).resize((200, 200))
         self._qr_photo = ImageTk.PhotoImage(qr_img)
         tk.Label(self.root, image=self._qr_photo).pack(pady=4)
-        tk.Label(self.root, text="Scan to open on your phone/tablet", fg="#888").pack(pady=(0, 10))
+        tk.Label(self.root, text="Scan to open on your phone/tablet", fg="#888").pack(pady=(0, 6))
+
+        self.plugin_label = tk.Label(self.root, text="", fg="#55aaff", font=("Segoe UI", 9))
+        self.plugin_label.pack(pady=(0, 4))
 
         self.status_label = tk.Label(self.root, text="Not started", fg="#888")
         self.status_label.pack(pady=(0, 6))
@@ -86,15 +91,43 @@ class LauncherApp:
         self.start_btn = tk.Button(self.root, text="Start", width=22, command=self._on_start)
         self.start_btn.pack(pady=(0, 16))
 
+        # Check plugin setup on window load
+        self.root.after(100, self._auto_setup_plugin)
+
+    def _auto_setup_plugin(self):
+        _, game_dir = gk2_locate.resolve_data_dir()
+        if game_dir:
+            ok, msg = installer.install_plugin_to_game(game_dir)
+            if ok:
+                self.plugin_label.config(text="✓ Plugin installed to game", fg="#4e9a06")
+            else:
+                self.plugin_label.config(text=f"Plugin error: {msg}", fg="#cc0000")
+        else:
+            self.plugin_label.config(text="GK2 folder not found (click Start to set)", fg="#888")
+
     def _on_start(self):
         if self._server_started:
             return
+
+        _, game_dir = gk2_locate.resolve_data_dir()
+        if not game_dir:
+            selected = filedialog.askdirectory(title="Select Graveyard Keeper 2 Installation Folder")
+            if selected:
+                gk2_locate.save_manual_override(selected)
+                game_dir = selected
+
+        if game_dir:
+            ok, msg = installer.install_plugin_to_game(game_dir)
+            if ok:
+                self.plugin_label.config(text="✓ Plugin installed to game", fg="#4e9a06")
+
         self._server_started = True
         self.start_btn.config(state="disabled")
         self.status_label.config(text="Running - waiting for connection...")
 
         threading.Thread(target=self._run_server, daemon=True).start()
         threading.Thread(target=self._monitor_game, daemon=True).start()
+
 
     def _on_client_request(self):
         if not self._connected and self._server_started:
