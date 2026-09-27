@@ -125,8 +125,8 @@ function craftIsLearned(craft) {
 function craftIsCompleted(craft) {
   if (!craft || !craftHasContent(craft) || !craft.isOneTime) return false;
   if (oneTimeCompletedCraftIds.includes(craft.id)) return true;
-  if (builtWgoIds.includes(craft.id)) return true;
-  if (craft.outputItems && craft.outputItems.some(o => o.itemId && builtWgoIds.includes(o.itemId))) return true;
+  if (unlockedCraftIds.includes(craft.id)) return true;
+  if (craft.outputItems && craft.outputItems.some(o => o.itemId && unlockedCraftIds.includes(o.itemId))) return true;
   return false;
 }
 
