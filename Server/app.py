@@ -131,7 +131,13 @@ def recipes():
 def inventory():
     _, inventory_path, game_dir = _data_paths()
     if not game_dir:
-        return jsonify({"containers": [], "totals": {}, "unlockedCraftIds": []})
+        return jsonify({
+            "containers": [],
+            "totals": {},
+            "unlockedCraftIds": [],
+            "oneTimeCompletedCraftIds": [],
+            "builtWgoIds": [],
+        })
 
     snapshot = _read_json(inventory_path, {"containers": [], "unlockedCraftIds": []})
     # Backwards-compat: older plugin builds wrote inventory.json as a bare array.
@@ -142,10 +148,15 @@ def inventory():
             totals[stack["id"]] = totals.get(stack["id"], 0) + stack["count"]
 
     unlocked = [] if isinstance(snapshot, list) else snapshot.get("unlockedCraftIds", [])
+    one_time_completed = [] if isinstance(snapshot, list) else snapshot.get("oneTimeCompletedCraftIds", [])
+    built_wgos = [] if isinstance(snapshot, list) else snapshot.get("builtWgoIds", [])
+
     return jsonify({
         "containers": containers,
         "totals": totals,
         "unlockedCraftIds": unlocked,
+        "oneTimeCompletedCraftIds": one_time_completed,
+        "builtWgoIds": built_wgos,
     })
 
 

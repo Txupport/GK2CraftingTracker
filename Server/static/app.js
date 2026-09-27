@@ -5,9 +5,12 @@ let producerIndex = {};   // itemId -> { craft, outputCount }
 let totals = {};
 let containers = [];
 let unlockedCraftIds = [];
+let oneTimeCompletedCraftIds = [];
+let builtWgoIds = [];
 let pinned = {};
 let bundles = [];
 let expandedTrees = new Set(); // craft ids whose crafting tree is expanded on the Pinned tab
+let lastPinnedFingerprint = null;
 
 const MAX_TREE_DEPTH = 6;
 
@@ -21,24 +24,21 @@ function prettify(id) {
     .join(" ");
 }
 
-// Prefers the game's own localized name (word order like "Bronze Nails" isn't
-// derivable from the id "nails_bronze"); falls back to a prettified id when
-// the plugin couldn't resolve one (e.g. an internal/test-only item).
 function displayNameFor(itemId) {
   const item = itemsById[itemId];
   if (item && item.displayName) return item.displayName;
   return prettify(itemId);
 }
 
-// Not every item has an extracted icon (only ~1954 of them do); onerror
-// removes the broken <img> instead of showing a placeholder box.
 function iconImgTag(itemId) {
   if (!itemId) return "";
   return `<img class="item-icon" src="/icons/i_${itemId}.png" onerror="this.remove()" alt="">`;
 }
 
 async function fetchJSON(url, opts) {
-  const res = await fetch(url, opts);
+  const sep = url.includes("?") ? "&" : "?";
+  const nocacheUrl = `${url}${sep}_t=${Date.now()}`;
+  const res = await fetch(nocacheUrl, { cache: "no-store", ...opts });
   return res.json();
 }
 
@@ -65,9 +65,6 @@ async function refreshStatus() {
 function buildProducerIndex() {
   producerIndex = {};
   for (const craft of recipesData.crafts) {
-    // Leftover debug recipes (e.g. "test_flitch") aren't how you actually get
-    // the item in-game - skip them so the tree doesn't invent a fake recipe
-    // for something that's really just a base/harvested material.
     if (craftIsTestJunk(craft)) continue;
     for (const out of craft.outputItems) {
       if (!out.itemId || out.itemId in producerIndex) continue;
@@ -90,10 +87,10 @@ async function loadInventory() {
   totals = inv.totals || {};
   containers = inv.containers || [];
   unlockedCraftIds = inv.unlockedCraftIds || [];
+  oneTimeCompletedCraftIds = inv.oneTimeCompletedCraftIds || [];
+  builtWgoIds = inv.builtWgoIds || [];
 }
 
-// Where a given item currently is - one row per container that has some,
-// so multiple chests of the same type show up separately.
 function sourcesFor(itemId) {
   const rows = [];
   for (const c of containers) {
@@ -125,8 +122,17 @@ function craftIsLearned(craft) {
   return !craft.isNeedsUnlock || unlockedCraftIds.includes(craft.id);
 }
 
-// Filters out leftover dev/debug recipes that exist in the game's own balance
-// data (e.g. "test_wooden_plank") - not something added by the tracker.
+function craftIsCompleted(craft) {
+  if (!craft) return false;
+  if (oneTimeCompletedCraftIds.includes(craft.id)) return true;
+  if (builtWgoIds.includes(craft.id)) return true;
+  if (craft.outputItems && craft.outputItems.some(o => o.itemId && builtWgoIds.includes(o.itemId))) return true;
+  if (craft.isOneTime) {
+    if (craft.craftsIn && craft.craftsIn.some(cin => builtWgoIds.includes(cin))) return true;
+  }
+  return false;
+}
+
 function craftIsTestJunk(craft) {
   return /(^|_)test(_|s_|$)/i.test(craft.id);
 }
@@ -137,9 +143,6 @@ function craftDisplayName(craft) {
     : prettify(craft.id);
 }
 
-// A plain (non-collapsible) breakdown of exactly which container(s) currently
-// hold an item - inventory, tool belt, or a specific chest with its position.
-// Only built when the "Show item locations" checkbox is on.
 function buildWhereBlock(itemId) {
   const sources = sourcesFor(itemId);
   if (sources.length === 0) return null;
@@ -154,8 +157,6 @@ function buildWhereBlock(itemId) {
   return ul;
 }
 
-// Builds one <li> for an ingredient, expanding into a nested crafting tree
-// when showTree is true and the item is itself craftable.
 function buildIngredientNode(itemId, neededQty, showTree, showWhere, depth, visited) {
   const have = totals[itemId] || 0;
   const li = document.createElement("li");
@@ -175,7 +176,7 @@ function buildIngredientNode(itemId, neededQty, showTree, showWhere, depth, visi
 
   const details = document.createElement("details");
   details.className = "tree-node";
-  details.open = true; // "Show Crafting Tree" means the whole chain, fully expanded
+  details.open = true;
   const summary = document.createElement("summary");
   summary.innerHTML = `<span>${iconImgTag(itemId)}${displayNameFor(itemId)}</span><span>${have} / ${neededQty}</span>`;
   details.appendChild(summary);
@@ -211,13 +212,21 @@ function buildRecipeCard(craft, { qty, showTree, showWhere, pinButton, unpinButt
   const card = document.createElement("div");
   card.className = "card";
 
+  const isDone = craftIsCompleted(craft);
   const allOk = craftIsCraftable(craft, qty);
+
+  let badgeHtml = "";
+  if (isDone) {
+    badgeHtml = `<span class="card-badge card-badge--completed">✓ Completed</span>`;
+  } else {
+    badgeHtml = `<span class="card-badge ${allOk ? 'card-badge--ready' : 'card-badge--missing'}">${allOk ? 'Ready' : 'Missing items'}</span>`;
+  }
 
   const titleRow = document.createElement("div");
   titleRow.className = "card-title-row";
   titleRow.innerHTML = `
     <span class="card-title-group"><span class="card-title">${iconImgTag(craft.outputItems[0]?.itemId)}${craftDisplayName(craft)}</span></span>
-    <span class="card-badge ${allOk ? 'card-badge--ready' : 'card-badge--missing'}">${allOk ? 'Ready' : 'Missing items'}</span>
+    ${badgeHtml}
   `;
   const titleGroup = titleRow.querySelector(".card-title-group");
   const titleSpan = titleRow.querySelector(".card-title");
@@ -395,8 +404,6 @@ function openBundleModal(craftId) {
   document.getElementById("bundle-modal-cancel").addEventListener("click", cancel);
 }
 
-// Aggregates need-items across every recipe in a bundle (scaled by each
-// recipe's own pinned qty) into one combined shopping-list box.
 function buildBundleTotalsBox(craftIds) {
   const needed = {};
   for (const craftId of craftIds) {
@@ -429,18 +436,26 @@ function buildBundleTotalsBox(craftIds) {
   return box;
 }
 
-// ---------- Pinned tab (re-renders on every poll tick) ----------
-//
-// Bundles are an additional *view* over your pinned recipes, not a move:
-// every pinned recipe always appears in "All Pinned Recipes" regardless of
-// bundle membership, and additionally appears inside each bundle it's in.
+function getPinnedStateFingerprint() {
+  const showWhere = document.getElementById("pinned-show-where")?.checked;
+  return JSON.stringify({
+    pinned,
+    totals,
+    unlockedCount: unlockedCraftIds.length,
+    completedCount: oneTimeCompletedCraftIds.length,
+    builtCount: builtWgoIds.length,
+    expandedTrees: Array.from(expandedTrees).sort(),
+    showWhere
+  });
+}
 
 function renderPinned() {
+  lastPinnedFingerprint = getPinnedStateFingerprint();
+
   const list = document.getElementById("pinned-list");
   const showWhere = document.getElementById("pinned-show-where").checked;
   const ids = Object.keys(pinned).filter(id => craftsById[id]);
 
-  // Preserve which bundles are expanded across the 2s poll re-render.
   const openBundles = new Set();
   list.querySelectorAll("details.section[open]").forEach(d => openBundles.add(d.dataset.bundle));
 
@@ -499,7 +514,7 @@ function renderPinned() {
       }));
     }
     details.appendChild(cardList);
-    if (craftIds.length === 0) details.open = true; // nothing to hide - show the "how to add" hint
+    if (craftIds.length === 0) details.open = true;
     list.appendChild(details);
   }
 
@@ -522,13 +537,14 @@ function renderPinned() {
   list.appendChild(flatList);
 }
 
-// ---------- Search tab (renders on demand: input/filter/tab-switch) ----------
+// ---------- Search tab ----------
 
 function renderSearch() {
   const list = document.getElementById("search-list");
   const query = document.getElementById("search").value.toLowerCase().trim();
   const onlyCraftable = document.getElementById("search-only-craftable").checked;
   const includeMaterials = document.getElementById("search-include-materials").checked;
+  const hideCompleted = document.getElementById("search-hide-completed").checked;
   const showTest = document.getElementById("search-show-test").checked;
   const showTree = document.getElementById("search-show-tree").checked;
   const showWhere = document.getElementById("search-show-where").checked;
@@ -544,6 +560,7 @@ function renderSearch() {
   let matches = recipesData.crafts.filter(craft => {
     if (!craftHasContent(craft)) return false;
     if (!showTest && craftIsTestJunk(craft)) return false;
+    if (hideCompleted && craftIsCompleted(craft)) return false;
     if (craft.id.toLowerCase().includes(query)) return true;
     if (craft.outputItems.some(o => nameMatches(o.itemId))) return true;
     if (includeMaterials && craft.needItems.some(n => nameMatches(n.itemId))) return true;
@@ -563,17 +580,9 @@ function renderSearch() {
   }
 }
 
-// ---------- Browse Recipes tab (renders on demand, preserves open sections) ----------
+// ---------- Browse Recipes tab ----------
 
-// Numbered-instance suffixes (e.g. "church_blockage_1" .. "_9") are each a
-// separate world object, not a separate station - collapse them into one
-// group. Tier suffixes like conveyor "_t1"/"_t2"/"_t3" are also collapsed
-// (same machine, just upgraded), unlike e.g. "furnace_1"/"furnace_2" which
-// the plain trailing-number strip already handles the same way.
 function normalizeGroupKey(key) {
-  // Strips a numbered-instance segment wherever it falls, not just at the very
-  // end - e.g. "conveyor_place_pins_1_broken" -> "conveyor_place_pins_broken",
-  // same as the plain trailing case "church_blockage_1" -> "church_blockage".
   return key.replace(/_t\d+$/, "").replace(/_\d+(?=_|$)/g, "");
 }
 
@@ -582,17 +591,10 @@ function areaGroupKeyFor(craft) {
   return "other";
 }
 
-// World-location crafts (blockages, repairs, locked doors...) always just
-// consume materials with no item produced; real crafting stations produce
-// items. That split is already in the data, so use it instead of guessing
-// from names.
 function craftGroupIsStation(crafts) {
   return crafts.some(c => c.outputItems.length > 0);
 }
 
-// Best-effort material bucketing from the output item's id. Not from any
-// game data field (crafts don't carry a material tag) - just keyword
-// matching, so treat the bucket names as a convenience, not ground truth.
 const MATERIAL_KEYWORDS = [
   ["iron", "Iron"], ["bronze", "Bronze"], ["steel", "Steel"], ["copper", "Copper"],
   ["gold", "Gold"], ["silver", "Silver"], ["tin", "Tin"],
@@ -620,10 +622,12 @@ function materialGroupKeyFor(craft) {
 function baseBrowseCrafts() {
   const onlyCraftable = document.getElementById("browse-only-craftable").checked;
   const showNotLearned = document.getElementById("browse-show-not-learned").checked;
+  const hideCompleted = document.getElementById("browse-hide-completed").checked;
   const showTest = document.getElementById("browse-show-test").checked;
 
   let crafts = recipesData.crafts.filter(craftHasContent);
   if (!showTest) crafts = crafts.filter(c => !craftIsTestJunk(c));
+  if (hideCompleted) crafts = crafts.filter(c => !craftIsCompleted(c));
   if (onlyCraftable) crafts = crafts.filter(c => craftIsCraftable(c, 1));
   if (!showNotLearned) crafts = crafts.filter(craftIsLearned);
   return crafts;
@@ -646,8 +650,6 @@ function buildAddAllButton(crafts, bundleName, onDone) {
       bundles = await res.json();
     }
 
-    // Sequential + checked, not Promise.all: this must not silently drop
-    // items if one request fails (e.g. a dev-server restart mid-batch).
     const failed = [];
     for (const c of crafts) {
       const existing = new Set(pinned[c.id]?.bundles || []);
@@ -674,10 +676,9 @@ function buildAddAllButton(crafts, bundleName, onDone) {
 
 function renderGroupedSections(containerId, crafts, groupKeyFn, keyLabelFn, rerender) {
   const container = document.getElementById(containerId);
-  const showTree = document.getElementById("browse-show-tree").checked;
-  const showWhere = document.getElementById("browse-show-where").checked;
+  const showTree = document.getElementById("browse-show-tree")?.checked || false;
+  const showWhere = document.getElementById("browse-show-where")?.checked || false;
 
-  // Preserve which sections are currently expanded across re-renders.
   const openSections = new Set();
   container.querySelectorAll("details.section[open]").forEach(d => openSections.add(d.dataset.section));
 
@@ -798,6 +799,34 @@ function renderBrowse() {
   renderBrowseByMaterial();
 }
 
+// ---------- Completed tab ----------
+
+function renderCompleted() {
+  const container = document.getElementById("completed-sections");
+  const showWhere = document.getElementById("completed-show-where")?.checked || false;
+
+  const completedCrafts = recipesData.crafts.filter(craftIsCompleted);
+  updateCompletedTabBadge(completedCrafts.length);
+
+  renderGroupedSections(
+    "completed-sections",
+    completedCrafts,
+    areaGroupKeyFor,
+    prettify,
+    renderCompleted
+  );
+}
+
+function updateCompletedTabBadge(count) {
+  if (count === undefined) {
+    count = recipesData.crafts.filter(craftIsCompleted).length;
+  }
+  const btn = document.getElementById("tab-btn-completed");
+  if (btn) {
+    btn.textContent = `Completed (${count})`;
+  }
+}
+
 // ---------- Tabs / wiring ----------
 
 function currentTab() {
@@ -809,6 +838,7 @@ function renderActiveTab() {
   if (tab === "pinned") renderPinned();
   else if (tab === "search") renderSearch();
   else if (tab === "browse") renderBrowse();
+  else if (tab === "completed") renderCompleted();
 }
 
 function setupTabs() {
@@ -836,19 +866,16 @@ function setupSubtabs() {
 
 function setupOnDemandControls() {
   const ids = [
-    "search", "search-only-craftable", "search-include-materials", "search-show-test", "search-show-tree", "search-show-where",
-    "browse-only-craftable", "browse-show-not-learned", "browse-show-test", "browse-show-tree", "browse-show-where",
+    "search", "search-only-craftable", "search-include-materials", "search-hide-completed", "search-show-test", "search-show-tree", "search-show-where",
+    "browse-only-craftable", "browse-show-not-learned", "browse-hide-completed", "browse-show-test", "browse-show-tree", "browse-show-where",
+    "completed-show-where",
   ];
   for (const id of ids) {
     const el = document.getElementById(id);
-    el.addEventListener("input", renderActiveTab);
+    if (el) el.addEventListener("input", renderActiveTab);
   }
   document.getElementById("pinned-show-where").addEventListener("input", renderPinned);
 
-  // The top checkbox is a bulk action, not a persistent per-card flag: check
-  // it to expand every currently-pinned recipe's crafting tree at once,
-  // uncheck to collapse them all. Individual recipes keep their own
-  // "Show Crafting Tree" button to toggle just themselves afterward.
   document.getElementById("pinned-show-tree").addEventListener("input", e => {
     if (e.target.checked) {
       Object.keys(pinned).forEach(id => expandedTrees.add(id));
@@ -883,8 +910,15 @@ async function pollLoop() {
     const active = document.activeElement;
     const isTyping = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable);
     if (!isTyping) {
-      renderPinned();
+      const tab = currentTab();
+      if (tab === "pinned") {
+        const currentFp = getPinnedStateFingerprint();
+        if (currentFp !== lastPinnedFingerprint) {
+          renderPinned();
+        }
+      }
     }
+    updateCompletedTabBadge();
   } catch (e) {
     console.error(e);
   }
@@ -937,6 +971,7 @@ async function bootstrap() {
   await loadPinned();
   await loadBundles();
   renderActiveTab();
+  updateCompletedTabBadge();
   pollLoop();
 }
 

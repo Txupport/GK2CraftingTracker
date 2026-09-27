@@ -16,6 +16,7 @@
     <button class="tab-btn active" data-tab="pinned">Pinned Recipes</button>
     <button class="tab-btn" data-tab="search">Search</button>
     <button class="tab-btn" data-tab="browse">Browse Recipes</button>
+    <button class="tab-btn" data-tab="completed" id="tab-btn-completed">Completed</button>
   </nav>
 
   <main>
@@ -38,6 +39,7 @@
       <div class="filters-row">
         <label><input type="checkbox" id="search-only-craftable"> Only show craftable</label>
         <label><input type="checkbox" id="search-include-materials" checked> Include material names in search</label>
+        <label><input type="checkbox" id="search-hide-completed" checked> Hide completed</label>
         <label><input type="checkbox" id="search-show-test"> Show test/debug recipes</label>
         <label class="switch-label"><input type="checkbox" id="search-show-tree"> Show crafting tree</label>
         <label class="switch-label"><input type="checkbox" id="search-show-where"> Show item locations</label>
@@ -49,6 +51,7 @@
       <div class="filters-row">
         <label><input type="checkbox" id="browse-only-craftable"> Only show craftable</label>
         <label><input type="checkbox" id="browse-show-not-learned"> Show not learned yet</label>
+        <label><input type="checkbox" id="browse-hide-completed" checked> Hide completed</label>
         <label><input type="checkbox" id="browse-show-test"> Show test/debug recipes</label>
         <label class="switch-label"><input type="checkbox" id="browse-show-tree"> Show crafting tree</label>
         <label class="switch-label"><input type="checkbox" id="browse-show-where"> Show item locations</label>
@@ -59,6 +62,13 @@
       </nav>
       <div id="browse-sections-area" class="subtab-panel active"></div>
       <div id="browse-sections-material" class="subtab-panel"></div>
+    </section>
+
+    <section id="tab-completed" class="tab-panel">
+      <div class="filters-row">
+        <label class="switch-label"><input type="checkbox" id="completed-show-where"> Show item locations</label>
+      </div>
+      <div id="completed-sections"></div>
     </section>
   </main>
 

@@ -27,6 +27,8 @@ namespace GKTrackerBridge
     {
         public List<ContainerDto> containers = new List<ContainerDto>();
         public List<string> unlockedCraftIds = new List<string>();
+        public List<string> oneTimeCompletedCraftIds = new List<string>();
+        public List<string> builtWgoIds = new List<string>();
     }
 
     public static class InventoryWatcher
@@ -47,23 +49,33 @@ namespace GKTrackerBridge
 
             var gameSave = MainGame.Instance != null ? GameSaveField.GetValue(MainGame.Instance) as GameSave : null;
 
+            var ks = gameSave?.knowledgeSystem;
+            if (ks != null)
+            {
+                if (ks.unlockedCrafts != null) snapshot.unlockedCraftIds.AddRange(ks.unlockedCrafts);
+                if (ks.unlockedBuildings != null) snapshot.unlockedCraftIds.AddRange(ks.unlockedBuildings);
+                if (ks.unlockedTownBuildings != null) snapshot.unlockedCraftIds.AddRange(ks.unlockedTownBuildings);
+
+                if (ks.oneTimeCompletedCrafts != null) snapshot.oneTimeCompletedCraftIds.AddRange(ks.oneTimeCompletedCrafts);
+            }
+
             var worldData = gameSave?.worldData;
             var cache = worldData != null ? WorldDataCacheField.GetValue(worldData) as WgoDataCache : null;
             var wgoDict = cache?.wgoDataByUidCache;
             if (wgoDict != null)
             {
+                var builtSet = new HashSet<string>();
                 foreach (var kv in wgoDict)
                 {
                     var wgo = kv.Value;
-                    if (wgo?.Inventory == null) continue;
+                    if (wgo == null || string.IsNullOrEmpty(wgo.id)) continue;
+                    builtSet.Add(wgo.id);
+
+                    if (wgo.Inventory == null) continue;
                     if (wgo.Inventory.Data == null || wgo.Inventory.Data.Inventory == null || wgo.Inventory.Data.Inventory.Count == 0) continue;
                     AddContainer(snapshot.containers, "wgo", wgo.id, kv.Key.ToString(), wgo.Position, wgo.Inventory, wgo.WorldZoneData?.id);
                 }
-            }
-
-            if (gameSave?.knowledgeSystem?.unlockedCrafts != null)
-            {
-                snapshot.unlockedCraftIds.AddRange(gameSave.knowledgeSystem.unlockedCrafts);
+                snapshot.builtWgoIds.AddRange(builtSet);
             }
 
             var tmp = Path.Combine(TrackerPlugin.OutDir, "inventory.json.tmp");

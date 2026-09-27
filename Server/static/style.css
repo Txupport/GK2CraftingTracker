@@ -293,6 +293,7 @@ main {
 }
 .card-badge--ready { background: var(--purple-bg); color: var(--good); }
 .card-badge--missing { background: var(--accent-bg); color: var(--bad); }
+.card-badge--completed { background: var(--purple-bg); color: var(--text); border: 1px solid var(--purple); }
 
 .ingredient-list {
   margin: 0.6rem 0 0;

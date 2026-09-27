@@ -38,6 +38,7 @@ namespace GKTrackerBridge
         public string id;
         public string tabId;
         public bool isNeedsUnlock;
+        public bool isOneTime;
         public List<string> craftsIn = new List<string>();
         public List<NeedItemDto> needItems = new List<NeedItemDto>();
         public List<OutputItemDto> outputItems = new List<OutputItemDto>();
@@ -84,8 +85,28 @@ namespace GKTrackerBridge
                 foreach (var def in gb.craftDefs)
                 {
                     if (def == null || string.IsNullOrEmpty(def.id)) continue;
-                    var dto = new CraftDefDto { id = def.id, tabId = def.tabId, isNeedsUnlock = def.isNeedsUnlock };
-                    if (def.craftsIn != null) dto.craftsIn.AddRange(def.craftsIn);
+
+                    bool oneTime = false;
+                    var lowerId = def.id.ToLower();
+                    if (lowerId.Contains("blockage") || lowerId.Contains("repair") || lowerId.Contains("ladder") || lowerId.EndsWith("_upgrade") || lowerId.EndsWith("_s"))
+                    {
+                        oneTime = true;
+                    }
+
+                    var dto = new CraftDefDto { id = def.id, tabId = def.tabId, isNeedsUnlock = def.isNeedsUnlock, isOneTime = oneTime };
+                    if (def.craftsIn != null)
+                    {
+                        dto.craftsIn.AddRange(def.craftsIn);
+                        foreach (var cin in def.craftsIn)
+                        {
+                            var lc = cin.ToLower();
+                            if (lc.Contains("blockage") || lc.Contains("repair") || lc.StartsWith("builder_") || lc.StartsWith("t_b_"))
+                            {
+                                dto.isOneTime = true;
+                                break;
+                            }
+                        }
+                    }
 
                     if (def.needItems != null)
                     {
@@ -142,7 +163,8 @@ namespace GKTrackerBridge
                     {
                         id = bdef.id,
                         tabId = bdef.tab ?? "",
-                        isNeedsUnlock = bdef.isNeedsUnlock
+                        isNeedsUnlock = bdef.isNeedsUnlock,
+                        isOneTime = true,
                     };
                     if (bdef.buildsIn != null) dto.craftsIn.AddRange(bdef.buildsIn);
 
@@ -214,7 +236,8 @@ namespace GKTrackerBridge
                     {
                         id = tbdef.id,
                         tabId = "town",
-                        isNeedsUnlock = tbdef.isNeedsUnlock
+                        isNeedsUnlock = tbdef.isNeedsUnlock,
+                        isOneTime = true,
                     };
                     if (tbdef.craftsIn != null) dto.craftsIn.AddRange(tbdef.craftsIn);
 
