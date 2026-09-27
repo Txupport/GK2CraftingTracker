@@ -176,12 +176,12 @@ const WGO_ALIASES = {
   "chest_rough_place_p": ["wood_container"],
   "unlock_graveyard_zone_1": ["graveyard_module_grave_1"],
   "unlock_graveyard_zone_1_s": ["graveyard_module_grave_1"],
-  "kitchen_table_up_s": ["kitchen_table"],
-  "kitchen_table_up": ["kitchen_table"],
-  "kitchen_table_repair": ["kitchen_table"],
-  "kitchen_oven_up_s": ["kitchen_oven"],
-  "kitchen_oven_up": ["kitchen_oven"],
-  "kitchen_oven_repair": ["kitchen_oven"],
+  "kitchen_table_repair": ["kitchen_table", "kitchen_table_t2"],
+  "kitchen_oven_repair": ["kitchen_oven", "kitchen_oven_t2"],
+  "kitchen_table_up_s": ["kitchen_table_t2"],
+  "kitchen_table_up": ["kitchen_table_t2"],
+  "kitchen_oven_up_s": ["kitchen_oven_t2"],
+  "kitchen_oven_up": ["kitchen_oven_t2"],
 };
 
 const SCENE_STATIC_MARKERS = new Set([
@@ -193,8 +193,7 @@ function normalizeWgoId(s) {
   if (!s) return "";
   return s.toLowerCase()
     .replace(/_[spr]$/i, "")
-    .replace(/_place$/i, "")
-    .replace(/_up$/i, "");
+    .replace(/_place$/i, "");
 }
 
 function isBlockageCraft(craft) {
